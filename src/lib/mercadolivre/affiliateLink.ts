@@ -12,7 +12,7 @@ async function getSandbox() {
   return Sandbox.getOrCreate({
     name: SANDBOX_NAME,
     runtime: 'node24',
-    timeout: ms('2m'),
+    timeout: ms('4m'),
     onCreate: async (sbx) => {
       await sbx.runCommand({ cmd: 'npm', args: ['install', 'playwright'], cwd: '/vercel/sandbox' });
       await sbx.runCommand({
