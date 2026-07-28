@@ -92,8 +92,25 @@ try {
     process.exit(1);
   }
 
+  // A SPA religa os handlers reativos (que habilitam o botão "Gerar") um
+  // pouco depois do campo ficar visível — preencher rápido demais faz o
+  // valor entrar no DOM mas o estado do React não é atualizado, e o botão
+  // fica preso em disabled. Dá um tempo de acomodação antes de preencher.
+  await page.waitForTimeout(2500);
   await urlField.fill(productLink);
-  await page.getByRole('button', { name: 'Gerar' }).click();
+  await page.waitForTimeout(500);
+
+  const gerarBtn = page.getByRole('button', { name: 'Gerar' });
+  const stillDisabled = await gerarBtn.evaluate((el) => el.hasAttribute('disabled')).catch(() => true);
+  if (stillDisabled) {
+    // Fallback: repete o preenchimento caso o primeiro tenha corrido antes
+    // da hidratação religar o handler.
+    await urlField.fill('');
+    await urlField.fill(productLink);
+    await page.waitForTimeout(1500);
+  }
+
+  await gerarBtn.click({ timeout: 30000 });
 
   const affiliateLink = await page.locator('#textfield-copyLink-1').inputValue({ timeout: 15000 });
 
