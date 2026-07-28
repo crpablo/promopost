@@ -100,4 +100,33 @@ describe('runPipeline', () => {
       step: 'shopify_publish',
     });
   });
+
+  it('repassa coupon e discountedPrice pro buildPostText quando informados nas options', async () => {
+    const deps = makeDeps();
+
+    await runPipeline('https://mercadolivre.com.br/MLB123', deps, {
+      coupon: 'PROMO10',
+      discountedPrice: 79.9,
+    });
+
+    expect(deps.buildPostText).toHaveBeenCalledWith(
+      { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      'https://meli.la/abc',
+      'PROMO10',
+      79.9,
+    );
+  });
+
+  it('chama buildPostText sem coupon/discountedPrice quando options não é passado (comportamento atual)', async () => {
+    const deps = makeDeps();
+
+    await runPipeline('https://mercadolivre.com.br/MLB123', deps);
+
+    expect(deps.buildPostText).toHaveBeenCalledWith(
+      { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      'https://meli.la/abc',
+      undefined,
+      undefined,
+    );
+  });
 });

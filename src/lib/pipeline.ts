@@ -47,11 +47,20 @@ export interface AffiliateResult {
 export interface PipelineDeps {
   parseItemId: (link: string) => string | null;
   fetchProductAndAffiliateLink: (productLink: string) => Promise<AffiliateResult>;
-  buildPostText: (product: Product, affiliateLink: string) => string;
+  buildPostText: (product: Product, affiliateLink: string, coupon?: string, discountedPrice?: number) => string;
   publishArticle: (title: string, body: string, imageUrl: string) => Promise<{ url: string }>;
 }
 
-export async function runPipeline(link: string, deps: PipelineDeps): Promise<PipelineResult> {
+export interface PipelineOptions {
+  coupon?: string;
+  discountedPrice?: number;
+}
+
+export async function runPipeline(
+  link: string,
+  deps: PipelineDeps,
+  options?: PipelineOptions,
+): Promise<PipelineResult> {
   const itemId = deps.parseItemId(link);
   if (!itemId) {
     throw new PipelineError('link_parse', 'Link inválido: não é uma URL válida');
@@ -74,7 +83,7 @@ export async function runPipeline(link: string, deps: PipelineDeps): Promise<Pip
     throw new PipelineError('affiliate_link', (err as Error).message);
   }
 
-  const body = deps.buildPostText(product, affiliateLink);
+  const body = deps.buildPostText(product, affiliateLink, options?.coupon, options?.discountedPrice);
 
   let published: { url: string };
   try {
