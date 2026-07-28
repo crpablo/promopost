@@ -23,8 +23,8 @@ Decida se a mensagem é uma promoção de um produto do Mercado Livre (mercadoli
 
 Se for uma promoção do Mercado Livre, extraia:
 - link: a URL do produto (ou do encurtador) exatamente como aparece na mensagem.
-- coupon: o código do cupom de desconto, se a mensagem mencionar um. Caso contrário, null.
-- discountedPrice: o preço final já com o cupom aplicado (o valor "por", não o valor "de"), como número (ex: 89.90). Se a mensagem não mencionar cupom ou não deixar claro o preço com desconto, use null.
+- coupon: o código do cupom de desconto, se a mensagem mencionar um. Caso contrário, null. Independente de haver preço com desconto ou não.
+- discountedPrice: o preço final de venda mencionado na mensagem (o valor "por", não o valor "de"), como número (ex: 89.90) — sempre que a mensagem deixar claro esse valor, com ou sem cupom (pode ser um desconto direto, sem código nenhum). Se a mensagem não deixar claro um preço final específico, use null.
 
 Se a mensagem não for sobre uma promoção do Mercado Livre (ex: é conversa comum, ou é promoção de outro site/marketplace), retorne isMercadoLivrePromo: false e os demais campos null.`;
 

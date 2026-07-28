@@ -64,4 +64,22 @@ describe('extractPromo', () => {
 
     expect(result.isMercadoLivrePromo).toBe(false);
   });
+
+  it('extrai discountedPrice mesmo sem cupom (desconto direto)', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isMercadoLivrePromo: true,
+        link: 'https://www.mercadolivre.com.br/produto/p/MLB555',
+        coupon: null,
+        discountedPrice: 129.9,
+      },
+    });
+
+    const result = await extractPromo(
+      'Produto Y\nDe R$179,90 por R$129,90\nhttps://www.mercadolivre.com.br/produto/p/MLB555',
+    );
+
+    expect(result.coupon).toBeNull();
+    expect(result.discountedPrice).toBe(129.9);
+  });
 });
