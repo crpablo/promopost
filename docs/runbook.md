@@ -21,6 +21,8 @@ BLOB_READ_WRITE_TOKEN=<token> node scripts/bootstrap-session.mjs
 
 Logar manualmente, confirmar, copiar a URL impressa pra `ML_SESSION_BLOB_URL` na Vercel.
 
+Nota: `scripts/bootstrap-session.mjs` é o único caminho que escreve a sessão no Vercel Blob — não existe função `saveSession` no código da aplicação; o próprio script faz a chamada `put()` diretamente.
+
 ## 3. Ajustar os seletores do Playwright contra o site real
 
 Abrir `https://www.mercadolivre.com.br/afiliados/linkbuilder` já logado (mesma sessão do passo 2) e, com o DevTools, confirmar/corrigir os 3 seletores marcados `AJUSTAR` em `src/lib/mercadolivre/generate-link.playwright.mjs` (Task 7):

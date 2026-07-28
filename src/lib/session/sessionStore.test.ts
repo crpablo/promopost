@@ -1,29 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('@vercel/blob', () => ({
-  put: vi.fn().mockResolvedValue({ url: 'https://blob.vercel-storage.com/ml-session-abc.json' }),
-}));
-
-import { put } from '@vercel/blob';
-import { loadSession, saveSession } from './sessionStore';
-
-describe('saveSession', () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('envia o buffer pro Vercel Blob com access private e retorna a url', async () => {
-    const buffer = Buffer.from('{"cookies":[]}');
-    const result = await saveSession(buffer);
-
-    expect(put).toHaveBeenCalledWith(
-      'ml-session.json',
-      buffer,
-      expect.objectContaining({ access: 'private', allowOverwrite: true }),
-    );
-    expect(result.url).toBe('https://blob.vercel-storage.com/ml-session-abc.json');
-  });
-});
+import { loadSession } from './sessionStore';
 
 describe('loadSession', () => {
   afterEach(() => {
