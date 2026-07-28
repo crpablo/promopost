@@ -25,12 +25,58 @@ async function getSandbox() {
     runtime: 'node24',
     timeout: ms('4m'),
     onCreate: async (sbx) => {
-      await sbx.runCommand({ cmd: 'npm', args: ['install', 'playwright'], cwd: '/vercel/sandbox' });
-      await sbx.runCommand({
-        cmd: 'npx',
-        args: ['playwright', 'install', '--with-deps', 'chromium', 'chromium-headless-shell'],
+      const npmInstall = await sbx.runCommand({
+        cmd: 'npm',
+        args: ['install', 'playwright'],
         cwd: '/vercel/sandbox',
       });
+      if (npmInstall.exitCode !== 0) {
+        throw new Error(`Falha ao instalar playwright na sandbox: ${(await npmInstall.stderr()).slice(0, 500)}`);
+      }
+
+      const browserInstall = await sbx.runCommand({
+        cmd: 'npx',
+        args: ['playwright', 'install', 'chromium', 'chromium-headless-shell'],
+        cwd: '/vercel/sandbox',
+      });
+      if (browserInstall.exitCode !== 0) {
+        throw new Error(`Falha ao baixar o Chromium na sandbox: ${(await browserInstall.stderr()).slice(0, 500)}`);
+      }
+
+      // `playwright install-deps` só suporta apt/Debian — a sandbox roda
+      // Amazon Linux (dnf) — então instalamos as libs de sistema do Chromium
+      // manualmente. Sem isso o Chromium abre e fecha na hora
+      // ("libnspr4.so: cannot open shared object file").
+      const depsInstall = await sbx.runCommand({
+        cmd: 'dnf',
+        args: [
+          'install',
+          '-y',
+          'nss',
+          'nspr',
+          'atk',
+          'cups-libs',
+          'libdrm',
+          'libxkbcommon',
+          'at-spi2-atk',
+          'libXcomposite',
+          'libXdamage',
+          'libXext',
+          'libXfixes',
+          'libXrandr',
+          'mesa-libgbm',
+          'pango',
+          'cairo',
+          'alsa-lib',
+          'gtk3',
+        ],
+        sudo: true,
+      });
+      if (depsInstall.exitCode !== 0) {
+        throw new Error(
+          `Falha ao instalar dependências de sistema do Chromium: ${(await depsInstall.stderr()).slice(0, 500)}`,
+        );
+      }
     },
   });
 }
