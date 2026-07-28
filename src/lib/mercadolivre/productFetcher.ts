@@ -7,7 +7,7 @@ export interface Product {
 export async function fetchProduct(itemId: string): Promise<Product> {
   const res = await fetch(`https://api.mercadolibre.com/items/${itemId}`);
   if (!res.ok) {
-    throw new Error(`Mercado Livre item lookup failed: ${res.status}`);
+    throw new Error(`Falha ao buscar produto no Mercado Livre: ${res.status}`);
   }
   const data = await res.json();
   const imageUrl = data.pictures?.[0]?.secure_url || data.thumbnail;

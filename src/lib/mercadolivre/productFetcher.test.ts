@@ -49,6 +49,6 @@ describe('fetchProduct', () => {
   it('lança erro quando a API responde com status de erro', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
-    await expect(fetchProduct('MLB000')).rejects.toThrow('Mercado Livre item lookup failed: 404');
+    await expect(fetchProduct('MLB000')).rejects.toThrow('Falha ao buscar produto no Mercado Livre: 404');
   });
 });
