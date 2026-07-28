@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ erro: 'invalid_json' }, { status: 400 });
   }
 
-  if (!body.link) {
+  if (!body?.link) {
     return Response.json({ erro: 'missing_link' }, { status: 400 });
   }
 

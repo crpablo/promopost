@@ -84,4 +84,14 @@ describe('POST /api/webhook', () => {
     expect(response.status).toBe(502);
     expect(json).toEqual({ passo: 'affiliate_link', erro: 'SESSION_EXPIRED' });
   });
+
+  it('retorna 400 com erro missing_link quando o body é null', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(makeRequest(null));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'missing_link' });
+  });
 });
