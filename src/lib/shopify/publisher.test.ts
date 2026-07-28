@@ -34,7 +34,7 @@ describe('publishArticle', () => {
 
     const result = await publishArticle(
       'Produto X',
-      'Produto X por R$99,90 — confira: https://x.com',
+      'Produto X por <strong>R$99,90</strong> — confira: <a href="https://x.com">https://x.com</a>',
       'https://x.com/img.jpg',
     );
 
@@ -76,7 +76,7 @@ describe('publishArticle', () => {
     );
   });
 
-  it('escapa caracteres especiais de HTML no corpo do artigo', async () => {
+  it('envolve o body recebido em um parágrafo sem re-escapar (já vem seguro de buildPostText)', async () => {
     stubEnv();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -91,12 +91,16 @@ describe('publishArticle', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await publishArticle('Título', 'Produto <script>alert(1)</script> & cia', 'https://x.com/img.jpg');
+    await publishArticle(
+      'Título',
+      'Produto por <strong>R$50,00</strong> — confira: <a href="https://x.com">https://x.com</a>',
+      'https://x.com/img.jpg',
+    );
 
     const [, options] = fetchMock.mock.calls[0];
     const parsedBody = JSON.parse(options.body);
     expect(parsedBody.variables.article.body).toBe(
-      '<p>Produto &lt;script&gt;alert(1)&lt;/script&gt; &amp; cia</p>',
+      '<p>Produto por <strong>R$50,00</strong> — confira: <a href="https://x.com">https://x.com</a></p>',
     );
   });
 });

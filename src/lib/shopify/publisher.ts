@@ -8,13 +8,6 @@ interface ShopifyConfig {
   blogId: string;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 function getConfig(): ShopifyConfig {
   const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN;
   const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
@@ -65,7 +58,9 @@ export async function publishArticle(
           blogId: config.blogId,
           title: title.slice(0, 255),
           author: { name: 'PromoPost' },
-          body: `<p>${escapeHtml(body)}</p>`,
+          // `body` já vem em HTML seguro (título escapado, preço/link controlados)
+          // de buildPostText — não escapar de novo aqui.
+          body: `<p>${body}</p>`,
           isPublished: false,
           image: imageUrl ? { url: imageUrl } : undefined,
         },
