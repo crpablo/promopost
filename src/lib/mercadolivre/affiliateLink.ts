@@ -28,7 +28,7 @@ async function getSandbox() {
       await sbx.runCommand({ cmd: 'npm', args: ['install', 'playwright'], cwd: '/vercel/sandbox' });
       await sbx.runCommand({
         cmd: 'npx',
-        args: ['playwright', 'install', '--with-deps', 'chromium'],
+        args: ['playwright', 'install', '--with-deps', 'chromium', 'chromium-headless-shell'],
         cwd: '/vercel/sandbox',
       });
     },
