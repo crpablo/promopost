@@ -15,6 +15,11 @@
 // válida — por isso o context abaixo usa user-agent real, esconde
 // navigator.webdriver e passa --disable-blink-features=AutomationControlled.
 // Sem isso, TODA navegação falha, não só a do link builder.
+//
+// --no-sandbox e --disable-setuid-sandbox são necessários porque o usuário
+// vercel-sandbox não tem privilégio de kernel pro sandbox interno do próprio
+// Chromium; sem essas flags o browser fecha sozinho logo após abrir
+// ("Target page, context or browser has been closed").
 
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -29,7 +34,11 @@ if (!productLink) {
 const storageState = JSON.parse(readFileSync('/vercel/sandbox/session.json', 'utf8'));
 
 const browser = await chromium.launch({
-  args: ['--disable-blink-features=AutomationControlled'],
+  args: [
+    '--disable-blink-features=AutomationControlled',
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+  ],
 });
 const context = await browser.newContext({
   storageState,
