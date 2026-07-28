@@ -67,5 +67,5 @@ A resposta de erro do webhook traz `{ "passo": "...", "erro": "..." }` indicando
 
 - `link_parse` — o link enviado não é reconhecido como produto Mercado Livre.
 - `product_fetch` — a API pública do Mercado Livre falhou ou o item não existe.
-- `affiliate_link` — a automação Playwright falhou. Se `erro` for `SESSION_EXPIRED`, repita o passo 2 (bootstrap). Caso contrário, o erro inclui o caminho de um screenshot de falha (salvo em `/tmp` na função Vercel — baixe os logs da execução para inspecionar).
+- `affiliate_link` — a automação Playwright falhou. Se `erro` for `SESSION_EXPIRED`, repita o passo 2 (bootstrap). Caso contrário, a mensagem de erro tenta indicar um caminho de screenshot, mas esse arquivo fica em `/tmp` da execução da função Vercel, que é descartada ao final do request — não é recuperável hoje. Pra debugar, use o texto do erro em si e, se precisar de mais detalhe, rode o script `src/lib/mercadolivre/generate-link.playwright.mjs` localmente contra a sessão salva pra reproduzir a falha com um browser visível.
 - `shopify_publish` — a API do Shopify recusou a criação do artigo (token inválido, blog errado, rate limit).
