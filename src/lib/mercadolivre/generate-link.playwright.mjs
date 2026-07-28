@@ -1,9 +1,14 @@
 // Roda DENTRO da Vercel Sandbox (node generate-link.mjs <link-produto>).
 // Usa a sessão salva em /vercel/sandbox/session.json (storageState do Playwright).
 //
-// Seletores confirmados contra o painel real (mercadolivre.com.br/afiliados/linkbuilder#hub)
-// em validação manual ponta-a-ponta. O link gerado usa o domínio meli.la, não
-// mercadolivre.com/sec/... como se supunha antes de testar contra o site real.
+// Faz duas coisas na mesma sessão de browser:
+//   1. Visita a página do produto e extrai título/preço/imagem do HTML.
+//      (a API pública api.mercadolibre.com/items/{id} passou a exigir OAuth
+//      e não serve mais pra isso — descoberto em validação manual real.)
+//   2. Visita o gerador de link de afiliado (mercadolivre.com.br/afiliados/linkbuilder#hub,
+//      só acessível pra conta já aprovada no Programa de Afiliados) e gera o link.
+//
+// Imprime em stdout um JSON: {"title","price","imageUrl","affiliateLink"}.
 //
 // O Mercado Livre bloqueia Chromium headless "puro" com uma página de erro
 // genérica ("Hubo un error accediendo a esta pagina..."), mesmo com sessão
@@ -39,15 +44,39 @@ await context.addInitScript(() => {
 const page = await context.newPage();
 
 try {
+  // 1. Dados do produto
+  await page.goto(productLink, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+  const title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
+
+  const priceMeta = await page
+    .locator('meta[itemprop="price"], meta[property="product:price:amount"]')
+    .first()
+    .getAttribute('content')
+    .catch(() => null);
+  const price = priceMeta ? Number.parseFloat(priceMeta) : NaN;
+
+  const imageUrl = await page
+    .locator('meta[property="og:image"]')
+    .first()
+    .getAttribute('content')
+    .catch(() => null);
+
+  if (!title || Number.isNaN(price) || !imageUrl) {
+    console.error(
+      `PRODUCT_NOT_FOUND (title=${JSON.stringify(title)}, price=${priceMeta}, imageUrl=${JSON.stringify(imageUrl)})`,
+    );
+    process.exit(1);
+  }
+
+  // 2. Link de afiliado
   await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub', {
     waitUntil: 'domcontentloaded',
     timeout: 45000,
   });
 
   const urlField = page.locator('#url-0');
-  const formVisible = await urlField
-    .isVisible({ timeout: 15000 })
-    .catch(() => false);
+  const formVisible = await urlField.isVisible({ timeout: 15000 }).catch(() => false);
 
   if (!formVisible) {
     console.error('SESSION_EXPIRED');
@@ -55,18 +84,15 @@ try {
   }
 
   await urlField.fill(productLink);
-
   await page.getByRole('button', { name: 'Gerar' }).click();
 
-  const generatedLink = await page
-    .locator('#textfield-copyLink-1')
-    .inputValue({ timeout: 15000 });
+  const affiliateLink = await page.locator('#textfield-copyLink-1').inputValue({ timeout: 15000 });
 
-  if (!generatedLink || !generatedLink.startsWith('http')) {
-    throw new Error(`Campo de resultado sem link válido: "${generatedLink}"`);
+  if (!affiliateLink || !affiliateLink.startsWith('http')) {
+    throw new Error(`Campo de resultado sem link válido: "${affiliateLink}"`);
   }
 
-  console.log(generatedLink.trim());
+  console.log(JSON.stringify({ title, price, imageUrl, affiliateLink: affiliateLink.trim() }));
 } catch (err) {
   console.error(String(err));
   process.exit(1);

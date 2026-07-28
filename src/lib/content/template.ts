@@ -1,4 +1,4 @@
-import type { Product } from '../mercadolivre/productFetcher';
+import type { Product } from '../mercadolivre/affiliateLink';
 
 export function buildPostText(product: Product, affiliateLink: string): string {
   const price = product.price.toLocaleString('pt-BR', {

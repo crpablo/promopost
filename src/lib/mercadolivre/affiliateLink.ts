@@ -2,8 +2,19 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Sandbox } from '@vercel/sandbox';
 import ms from 'ms';
-import { SessionExpiredError } from '../pipeline';
+import { ProductNotFoundError, SessionExpiredError } from '../pipeline';
 import { loadSession } from '../session/sessionStore';
+
+export interface Product {
+  title: string;
+  price: number;
+  imageUrl: string;
+}
+
+export interface AffiliateResult {
+  product: Product;
+  affiliateLink: string;
+}
 
 const SANDBOX_NAME = 'promopost-ml-affiliate';
 const SCRIPT_PATH = fileURLToPath(new URL('./generate-link.playwright.mjs', import.meta.url));
@@ -24,7 +35,7 @@ async function getSandbox() {
   });
 }
 
-export async function generateAffiliateLink(productLink: string): Promise<string> {
+export async function fetchProductAndAffiliateLink(productLink: string): Promise<AffiliateResult> {
   const sessionBuffer = await loadSession();
   const scriptContent = readFileSync(SCRIPT_PATH);
 
@@ -46,13 +57,32 @@ export async function generateAffiliateLink(productLink: string): Promise<string
     if (stderr.includes('SESSION_EXPIRED')) {
       throw new SessionExpiredError();
     }
+    if (stderr.includes('PRODUCT_NOT_FOUND')) {
+      throw new ProductNotFoundError(`Produto não encontrado na página do Mercado Livre: ${stderr.slice(0, 300)}`);
+    }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   }
 
   const stdout = (await result.stdout()).trim();
-  if (!stdout.startsWith('http')) {
+  let parsed: { title?: unknown; price?: unknown; imageUrl?: unknown; affiliateLink?: unknown };
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
     throw new Error(`Saída inesperada do script de afiliado: ${stdout.slice(0, 200)}`);
   }
 
-  return stdout;
+  if (
+    typeof parsed.title !== 'string' ||
+    typeof parsed.price !== 'number' ||
+    typeof parsed.imageUrl !== 'string' ||
+    typeof parsed.affiliateLink !== 'string' ||
+    !parsed.affiliateLink.startsWith('http')
+  ) {
+    throw new Error(`Saída inesperada do script de afiliado: ${stdout.slice(0, 200)}`);
+  }
+
+  return {
+    product: { title: parsed.title, price: parsed.price, imageUrl: parsed.imageUrl },
+    affiliateLink: parsed.affiliateLink,
+  };
 }

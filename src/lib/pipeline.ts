@@ -1,4 +1,4 @@
-import type { Product } from './mercadolivre/productFetcher';
+import type { Product } from './mercadolivre/affiliateLink';
 
 export type PipelineStep = 'link_parse' | 'product_fetch' | 'affiliate_link' | 'shopify_publish';
 
@@ -21,14 +21,25 @@ export class SessionExpiredError extends Error {
   }
 }
 
+export class ProductNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductNotFoundError';
+  }
+}
+
 export interface PipelineResult {
   postUrl: string;
 }
 
+export interface AffiliateResult {
+  product: Product;
+  affiliateLink: string;
+}
+
 export interface PipelineDeps {
   parseItemId: (link: string) => string | null;
-  fetchProduct: (itemId: string) => Promise<Product>;
-  generateAffiliateLink: (productLink: string) => Promise<string>;
+  fetchProductAndAffiliateLink: (productLink: string) => Promise<AffiliateResult>;
   buildPostText: (product: Product, affiliateLink: string) => string;
   publishArticle: (title: string, body: string, imageUrl: string) => Promise<{ url: string }>;
 }
@@ -40,18 +51,15 @@ export async function runPipeline(link: string, deps: PipelineDeps): Promise<Pip
   }
 
   let product: Product;
-  try {
-    product = await deps.fetchProduct(itemId);
-  } catch (err) {
-    throw new PipelineError('product_fetch', (err as Error).message);
-  }
-
   let affiliateLink: string;
   try {
-    affiliateLink = await deps.generateAffiliateLink(link);
+    ({ product, affiliateLink } = await deps.fetchProductAndAffiliateLink(link));
   } catch (err) {
     if (err instanceof SessionExpiredError) {
       throw new PipelineError('affiliate_link', err.message, 'SESSION_EXPIRED');
+    }
+    if (err instanceof ProductNotFoundError) {
+      throw new PipelineError('product_fetch', err.message);
     }
     throw new PipelineError('affiliate_link', (err as Error).message);
   }

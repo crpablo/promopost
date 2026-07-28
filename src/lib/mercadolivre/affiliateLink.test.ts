@@ -18,23 +18,36 @@ vi.mock('../session/sessionStore', () => ({
   loadSession: vi.fn().mockResolvedValue(Buffer.from('{"cookies":[]}')),
 }));
 
-import { generateAffiliateLink } from './affiliateLink';
+import { fetchProductAndAffiliateLink } from './affiliateLink';
 
-describe('generateAffiliateLink', () => {
+describe('fetchProductAndAffiliateLink', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('retorna o link de afiliado quando o script termina com sucesso', async () => {
+  it('retorna produto e link de afiliado quando o script termina com sucesso', async () => {
     runCommandMock.mockResolvedValue({
       exitCode: 0,
-      stdout: async () => 'https://mercadolivre.com/sec/abc123\n',
+      stdout: async () =>
+        `${JSON.stringify({
+          title: 'Fone de Ouvido Bluetooth XYZ',
+          price: 149.9,
+          imageUrl: 'https://http2.mlstatic.com/img.jpg',
+          affiliateLink: 'https://meli.la/abc123',
+        })}\n`,
       stderr: async () => '',
     });
 
-    const link = await generateAffiliateLink('https://mercadolivre.com.br/MLB123');
+    const result = await fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123');
 
-    expect(link).toBe('https://mercadolivre.com/sec/abc123');
+    expect(result).toEqual({
+      product: {
+        title: 'Fone de Ouvido Bluetooth XYZ',
+        price: 149.9,
+        imageUrl: 'https://http2.mlstatic.com/img.jpg',
+      },
+      affiliateLink: 'https://meli.la/abc123',
+    });
     expect(writeFilesMock).toHaveBeenCalled();
     expect(runCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -51,9 +64,21 @@ describe('generateAffiliateLink', () => {
       stderr: async () => 'SESSION_EXPIRED',
     });
 
-    await expect(generateAffiliateLink('https://mercadolivre.com.br/MLB123')).rejects.toThrow(
-      'SESSION_EXPIRED',
-    );
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('SESSION_EXPIRED');
+  });
+
+  it('lança ProductNotFoundError quando o script reporta PRODUCT_NOT_FOUND no stderr', async () => {
+    runCommandMock.mockResolvedValue({
+      exitCode: 1,
+      stdout: async () => '',
+      stderr: async () => 'PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)',
+    });
+
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('Produto não encontrado');
   });
 
   it('lança erro genérico quando o script falha por outro motivo', async () => {
@@ -63,8 +88,20 @@ describe('generateAffiliateLink', () => {
       stderr: async () => 'TimeoutError: locator not found',
     });
 
-    await expect(generateAffiliateLink('https://mercadolivre.com.br/MLB123')).rejects.toThrow(
-      'Falha ao gerar link de afiliado',
-    );
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('Falha ao gerar link de afiliado');
+  });
+
+  it('lança erro quando a saída não é um JSON válido', async () => {
+    runCommandMock.mockResolvedValue({
+      exitCode: 0,
+      stdout: async () => 'not json',
+      stderr: async () => '',
+    });
+
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('Saída inesperada do script de afiliado');
   });
 });

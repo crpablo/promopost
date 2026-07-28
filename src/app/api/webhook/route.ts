@@ -1,7 +1,6 @@
 import { buildPostText } from '@/lib/content/template';
-import { generateAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
+import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
-import { fetchProduct } from '@/lib/mercadolivre/productFetcher';
 import { PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
 
@@ -27,8 +26,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const result = await runPipeline(body.link, {
       parseItemId,
-      fetchProduct,
-      generateAffiliateLink,
+      fetchProductAndAffiliateLink,
       buildPostText,
       publishArticle,
     });

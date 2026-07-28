@@ -1,16 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SessionExpiredError, runPipeline, type PipelineDeps } from './pipeline';
+import { ProductNotFoundError, SessionExpiredError, runPipeline, type PipelineDeps } from './pipeline';
 
 function makeDeps(overrides: Partial<PipelineDeps> = {}): PipelineDeps {
   return {
     parseItemId: vi.fn().mockReturnValue('MLB123'),
-    fetchProduct: vi
-      .fn()
-      .mockResolvedValue({ title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' }),
-    generateAffiliateLink: vi.fn().mockResolvedValue('https://mercadolivre.com/sec/abc'),
-    buildPostText: vi
-      .fn()
-      .mockReturnValue('Produto X por R$99,90 — confira: https://mercadolivre.com/sec/abc'),
+    fetchProductAndAffiliateLink: vi.fn().mockResolvedValue({
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    }),
+    buildPostText: vi.fn().mockReturnValue('Produto X por R$99,90 — confira: https://meli.la/abc'),
     publishArticle: vi
       .fn()
       .mockResolvedValue({ url: 'https://loja.myshopify.com/blogs/noticias/produto-x' }),
@@ -19,17 +17,16 @@ function makeDeps(overrides: Partial<PipelineDeps> = {}): PipelineDeps {
 }
 
 describe('runPipeline', () => {
-  it('roda os 4 passos em ordem e retorna a url do post', async () => {
+  it('roda os passos em ordem e retorna a url do post', async () => {
     const deps = makeDeps();
 
     const result = await runPipeline('https://mercadolivre.com.br/MLB123', deps);
 
     expect(result).toEqual({ postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x' });
-    expect(deps.fetchProduct).toHaveBeenCalledWith('MLB123');
-    expect(deps.generateAffiliateLink).toHaveBeenCalledWith('https://mercadolivre.com.br/MLB123');
+    expect(deps.fetchProductAndAffiliateLink).toHaveBeenCalledWith('https://mercadolivre.com.br/MLB123');
     expect(deps.publishArticle).toHaveBeenCalledWith(
       'Produto X',
-      'Produto X por R$99,90 — confira: https://mercadolivre.com/sec/abc',
+      'Produto X por R$99,90 — confira: https://meli.la/abc',
       'https://x.com/img.jpg',
     );
   });
@@ -42,23 +39,38 @@ describe('runPipeline', () => {
     });
   });
 
-  it('lança PipelineError no passo product_fetch quando a busca falha', async () => {
-    const deps = makeDeps({ fetchProduct: vi.fn().mockRejectedValue(new Error('404')) });
+  it('lança PipelineError no passo product_fetch quando o produto não é encontrado na página', async () => {
+    const deps = makeDeps({
+      fetchProductAndAffiliateLink: vi
+        .fn()
+        .mockRejectedValue(new ProductNotFoundError('produto não encontrado')),
+    });
 
     await expect(runPipeline('https://mercadolivre.com.br/MLB123', deps)).rejects.toMatchObject({
       step: 'product_fetch',
-      message: '404',
+      message: 'produto não encontrado',
     });
   });
 
   it('lança PipelineError com code SESSION_EXPIRED quando a sessão do ML expirou', async () => {
     const deps = makeDeps({
-      generateAffiliateLink: vi.fn().mockRejectedValue(new SessionExpiredError()),
+      fetchProductAndAffiliateLink: vi.fn().mockRejectedValue(new SessionExpiredError()),
     });
 
     await expect(runPipeline('https://mercadolivre.com.br/MLB123', deps)).rejects.toMatchObject({
       step: 'affiliate_link',
       code: 'SESSION_EXPIRED',
+    });
+  });
+
+  it('lança PipelineError no passo affiliate_link quando a automação falha por outro motivo', async () => {
+    const deps = makeDeps({
+      fetchProductAndAffiliateLink: vi.fn().mockRejectedValue(new Error('timeout')),
+    });
+
+    await expect(runPipeline('https://mercadolivre.com.br/MLB123', deps)).rejects.toMatchObject({
+      step: 'affiliate_link',
+      message: 'timeout',
     });
   });
 

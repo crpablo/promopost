@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/mercadolivre/parseLink', () => ({ parseItemId: vi.fn() }));
-vi.mock('@/lib/mercadolivre/productFetcher', () => ({ fetchProduct: vi.fn() }));
-vi.mock('@/lib/mercadolivre/affiliateLink', () => ({ generateAffiliateLink: vi.fn() }));
+vi.mock('@/lib/mercadolivre/affiliateLink', () => ({ fetchProductAndAffiliateLink: vi.fn() }));
 vi.mock('@/lib/content/template', () => ({ buildPostText: vi.fn() }));
 vi.mock('@/lib/shopify/publisher', () => ({ publishArticle: vi.fn() }));
 
 import { buildPostText } from '@/lib/content/template';
-import { generateAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
+import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
-import { fetchProduct } from '@/lib/mercadolivre/productFetcher';
 import { SessionExpiredError } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
 import { POST } from './route';
@@ -39,12 +37,10 @@ describe('POST /api/webhook', () => {
   it('retorna 200 com a url do post no caminho feliz', async () => {
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
-    vi.mocked(fetchProduct).mockResolvedValue({
-      title: 'Produto X',
-      price: 99.9,
-      imageUrl: 'https://x.com/img.jpg',
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
     });
-    vi.mocked(generateAffiliateLink).mockResolvedValue('https://mercadolivre.com/sec/abc');
     vi.mocked(buildPostText).mockReturnValue('texto do post');
     vi.mocked(publishArticle).mockResolvedValue({
       url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
@@ -71,12 +67,7 @@ describe('POST /api/webhook', () => {
   it('retorna 502 com passo affiliate_link e erro SESSION_EXPIRED quando a sessão expirou', async () => {
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
-    vi.mocked(fetchProduct).mockResolvedValue({
-      title: 'Produto X',
-      price: 99.9,
-      imageUrl: 'https://x.com/img.jpg',
-    });
-    vi.mocked(generateAffiliateLink).mockRejectedValue(new SessionExpiredError());
+    vi.mocked(fetchProductAndAffiliateLink).mockRejectedValue(new SessionExpiredError());
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
