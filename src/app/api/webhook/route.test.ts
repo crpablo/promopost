@@ -92,6 +92,6 @@ describe('POST /api/webhook', () => {
     const json = await response.json();
 
     expect(response.status).toBe(400);
-    expect(json).toEqual({ erro: 'missing_link' });
+    expect(json).toEqual({ erro: 'link do produto não informado' });
   });
 });
