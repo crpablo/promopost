@@ -46,14 +46,7 @@ export async function generateAffiliateLink(productLink: string): Promise<string
     if (stderr.includes('SESSION_EXPIRED')) {
       throw new SessionExpiredError();
     }
-    const screenshotPath = await sandbox
-      .downloadFile(
-        { path: '/vercel/sandbox/failure.png' },
-        { path: `/tmp/affiliate-failure-${Date.now()}.png` },
-      )
-      .catch(() => null);
-    const screenshotNote = screenshotPath ? ` (screenshot salvo em ${screenshotPath})` : '';
-    throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}${screenshotNote}`);
+    throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   }
 
   const stdout = (await result.stdout()).trim();

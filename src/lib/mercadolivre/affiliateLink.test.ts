@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { runCommandMock, writeFilesMock, downloadFileMock, getOrCreateMock } = vi.hoisted(() => {
+const { runCommandMock, writeFilesMock, getOrCreateMock } = vi.hoisted(() => {
   const runCommandMock = vi.fn();
   const writeFilesMock = vi.fn();
-  const downloadFileMock = vi.fn().mockResolvedValue('/tmp/affiliate-failure-123.png');
   const getOrCreateMock = vi.fn().mockResolvedValue({
     writeFiles: writeFilesMock,
     runCommand: runCommandMock,
-    downloadFile: downloadFileMock,
   });
-  return { runCommandMock, writeFilesMock, downloadFileMock, getOrCreateMock };
+  return { runCommandMock, writeFilesMock, getOrCreateMock };
 });
 
 vi.mock('@vercel/sandbox', () => ({
@@ -58,7 +56,7 @@ describe('generateAffiliateLink', () => {
     );
   });
 
-  it('lança erro genérico e baixa screenshot quando o script falha por outro motivo', async () => {
+  it('lança erro genérico quando o script falha por outro motivo', async () => {
     runCommandMock.mockResolvedValue({
       exitCode: 1,
       stdout: async () => '',
@@ -68,6 +66,5 @@ describe('generateAffiliateLink', () => {
     await expect(generateAffiliateLink('https://mercadolivre.com.br/MLB123')).rejects.toThrow(
       'Falha ao gerar link de afiliado',
     );
-    expect(downloadFileMock).toHaveBeenCalled();
   });
 });
