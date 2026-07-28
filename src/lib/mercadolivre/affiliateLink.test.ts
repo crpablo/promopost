@@ -81,6 +81,18 @@ describe('fetchProductAndAffiliateLink', () => {
     ).rejects.toThrow('Produto não encontrado');
   });
 
+  it('lança InvalidLinkError quando o script reporta LINK_NOT_MERCADOLIVRE no stderr', async () => {
+    runCommandMock.mockResolvedValue({
+      exitCode: 1,
+      stdout: async () => '',
+      stderr: async () => 'LINK_NOT_MERCADOLIVRE (resolvido para: https://exemplo.com/outra-coisa)',
+    });
+
+    await expect(
+      fetchProductAndAffiliateLink('https://go.promozone.ai/mercadolivre/PwQ6x6'),
+    ).rejects.toThrow('Link não leva a uma página do Mercado Livre');
+  });
+
   it('lança erro genérico quando o script falha por outro motivo', async () => {
     runCommandMock.mockResolvedValue({
       exitCode: 1,

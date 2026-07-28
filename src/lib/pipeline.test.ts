@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ProductNotFoundError, SessionExpiredError, runPipeline, type PipelineDeps } from './pipeline';
+import {
+  InvalidLinkError,
+  ProductNotFoundError,
+  SessionExpiredError,
+  runPipeline,
+  type PipelineDeps,
+} from './pipeline';
 
 function makeDeps(overrides: Partial<PipelineDeps> = {}): PipelineDeps {
   return {
@@ -31,11 +37,24 @@ describe('runPipeline', () => {
     );
   });
 
-  it('lança PipelineError no passo link_parse quando o link não é reconhecido', async () => {
+  it('lança PipelineError no passo link_parse quando o link não é uma URL válida', async () => {
     const deps = makeDeps({ parseItemId: vi.fn().mockReturnValue(null) });
 
-    await expect(runPipeline('https://shopee.com.br/x', deps)).rejects.toMatchObject({
+    await expect(runPipeline('não é um link', deps)).rejects.toMatchObject({
       step: 'link_parse',
+    });
+  });
+
+  it('lança PipelineError no passo link_parse quando o link resolvido não é do Mercado Livre', async () => {
+    const deps = makeDeps({
+      fetchProductAndAffiliateLink: vi
+        .fn()
+        .mockRejectedValue(new InvalidLinkError('link não leva a uma página do Mercado Livre')),
+    });
+
+    await expect(runPipeline('https://go.promozone.ai/mercadolivre/PwQ6x6', deps)).rejects.toMatchObject({
+      step: 'link_parse',
+      message: 'link não leva a uma página do Mercado Livre',
     });
   });
 

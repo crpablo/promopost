@@ -1,8 +1,13 @@
 // Roda DENTRO da Vercel Sandbox (node generate-link.mjs <link-produto>).
 // Usa a sessão salva em /vercel/sandbox/session.json (storageState do Playwright).
 //
-// Faz duas coisas na mesma sessão de browser:
-//   1. Visita a página do produto e extrai título/preço/imagem do HTML.
+// Faz três coisas na mesma sessão de browser:
+//   0. Navega até o link recebido e segue qualquer redirect (HTTP normal ou
+//      client-side via JS — comum em encurtador/rastreador de terceiro tipo
+//      go.promozone.ai) até o destino final, e só então confere se caiu
+//      mesmo numa página do Mercado Livre. A partir daqui usa a URL
+//      resolvida (page.url()), não o link original recebido.
+//   1. Extrai título/preço/imagem do HTML da página do produto.
 //      (a API pública api.mercadolibre.com/items/{id} passou a exigir OAuth
 //      e não serve mais pra isso — descoberto em validação manual real.)
 //   2. Visita o gerador de link de afiliado (mercadolivre.com.br/afiliados/linkbuilder#hub,
@@ -53,9 +58,26 @@ await context.addInitScript(() => {
 const page = await context.newPage();
 
 try {
-  // 1. Dados do produto
-  await page.goto(productLink, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  // 0. Resolve redirect (HTTP ou client-side) e confere destino final
+  await page.goto(productLink, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+  await page.waitForTimeout(1500);
 
+  const resolvedUrl = page.url();
+  let resolvedHost;
+  try {
+    resolvedHost = new URL(resolvedUrl).hostname;
+  } catch {
+    resolvedHost = '';
+  }
+  const isMercadoLivre =
+    /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
+
+  if (!isMercadoLivre) {
+    console.error(`LINK_NOT_MERCADOLIVRE (resolvido para: ${resolvedUrl})`);
+    process.exit(1);
+  }
+
+  // 1. Dados do produto (já estamos na página, resolvida acima)
   const title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
 
   const priceMeta = await page
@@ -97,7 +119,7 @@ try {
   // valor entrar no DOM mas o estado do React não é atualizado, e o botão
   // fica preso em disabled. Dá um tempo de acomodação antes de preencher.
   await page.waitForTimeout(2500);
-  await urlField.fill(productLink);
+  await urlField.fill(resolvedUrl);
   await page.waitForTimeout(500);
 
   const gerarBtn = page.getByRole('button', { name: 'Gerar' });
@@ -106,7 +128,7 @@ try {
     // Fallback: repete o preenchimento caso o primeiro tenha corrido antes
     // da hidratação religar o handler.
     await urlField.fill('');
-    await urlField.fill(productLink);
+    await urlField.fill(resolvedUrl);
     await page.waitForTimeout(1500);
   }
 

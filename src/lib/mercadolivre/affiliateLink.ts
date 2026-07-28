@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Sandbox } from '@vercel/sandbox';
 import ms from 'ms';
-import { ProductNotFoundError, SessionExpiredError } from '../pipeline';
+import { InvalidLinkError, ProductNotFoundError, SessionExpiredError } from '../pipeline';
 import { loadSession } from '../session/sessionStore';
 
 export interface Product {
@@ -105,6 +105,9 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     }
     if (stderr.includes('PRODUCT_NOT_FOUND')) {
       throw new ProductNotFoundError(`Produto não encontrado na página do Mercado Livre: ${stderr.slice(0, 300)}`);
+    }
+    if (stderr.includes('LINK_NOT_MERCADOLIVRE')) {
+      throw new InvalidLinkError(`Link não leva a uma página do Mercado Livre: ${stderr.slice(0, 300)}`);
     }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   }

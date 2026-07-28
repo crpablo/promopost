@@ -28,6 +28,13 @@ export class ProductNotFoundError extends Error {
   }
 }
 
+export class InvalidLinkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidLinkError';
+  }
+}
+
 export interface PipelineResult {
   postUrl: string;
 }
@@ -47,7 +54,7 @@ export interface PipelineDeps {
 export async function runPipeline(link: string, deps: PipelineDeps): Promise<PipelineResult> {
   const itemId = deps.parseItemId(link);
   if (!itemId) {
-    throw new PipelineError('link_parse', 'Link inválido: não é um link de produto do Mercado Livre');
+    throw new PipelineError('link_parse', 'Link inválido: não é uma URL válida');
   }
 
   let product: Product;
@@ -60,6 +67,9 @@ export async function runPipeline(link: string, deps: PipelineDeps): Promise<Pip
     }
     if (err instanceof ProductNotFoundError) {
       throw new PipelineError('product_fetch', err.message);
+    }
+    if (err instanceof InvalidLinkError) {
+      throw new PipelineError('link_parse', err.message);
     }
     throw new PipelineError('affiliate_link', (err as Error).message);
   }
