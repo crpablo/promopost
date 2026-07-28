@@ -12,7 +12,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ erro: 'não autorizado' }, { status: 401 });
   }
 
-  let body: { link?: string };
+  let body: { link?: string; coupon?: string; discountedPrice?: number };
   try {
     body = await request.json();
   } catch {
@@ -24,12 +24,16 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const result = await runPipeline(body.link, {
-      parseItemId,
-      fetchProductAndAffiliateLink,
-      buildPostText,
-      publishArticle,
-    });
+    const result = await runPipeline(
+      body.link,
+      {
+        parseItemId,
+        fetchProductAndAffiliateLink,
+        buildPostText,
+        publishArticle,
+      },
+      { coupon: body.coupon, discountedPrice: body.discountedPrice },
+    );
     return Response.json({ postUrl: result.postUrl }, { status: 200 });
   } catch (err) {
     console.error('Erro no pipeline PromoPost:', err);

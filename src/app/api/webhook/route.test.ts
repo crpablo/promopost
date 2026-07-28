@@ -85,4 +85,32 @@ describe('POST /api/webhook', () => {
     expect(response.status).toBe(400);
     expect(json).toEqual({ erro: 'link do produto não informado' });
   });
+
+  it('repassa coupon e discountedPrice do body pro runPipeline quando informados', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('https://mercadolivre.com.br/MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+
+    await POST(
+      makeRequest({
+        link: 'https://mercadolivre.com.br/MLB123',
+        coupon: 'PROMO10',
+        discountedPrice: 79.9,
+      }),
+    );
+
+    expect(buildPostText).toHaveBeenCalledWith(
+      { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      'https://meli.la/abc',
+      'PROMO10',
+      79.9,
+    );
+  });
 });
