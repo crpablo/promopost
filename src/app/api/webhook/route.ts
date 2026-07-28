@@ -34,6 +34,7 @@ export async function POST(request: Request): Promise<Response> {
     });
     return Response.json({ postUrl: result.postUrl }, { status: 200 });
   } catch (err) {
+    console.error('Erro no pipeline PromoPost:', err);
     if (err instanceof PipelineError) {
       const status = err.step === 'link_parse' ? 400 : 502;
       return Response.json({ passo: err.step, erro: err.code ?? err.message }, { status });
