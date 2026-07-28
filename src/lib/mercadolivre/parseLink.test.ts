@@ -25,4 +25,9 @@ describe('parseItemId', () => {
   it('retorna null para string vazia', () => {
     expect(parseItemId('')).toBeNull();
   });
+
+  it('retorna null para URL de outro domínio com substring MLB... incidental', () => {
+    const link = 'https://exemplo.com/track?ref=MLB123456';
+    expect(parseItemId(link)).toBeNull();
+  });
 });

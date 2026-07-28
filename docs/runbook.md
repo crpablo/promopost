@@ -57,6 +57,8 @@ curl -X POST https://<seu-dominio>.vercel.app/api/webhook \
 
 Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "postUrl": "..." }`.
 
+Nota: links de catálogo do Mercado Livre (`/p/MLB...`) podem usar um ID de produto diferente do ID do anúncio individual — vale verificar essa validação manual também com um link `/p/` real; se der 404 no passo `product_fetch`, é um follow-up conhecido, não uma regressão.
+
 ## 7. Conferir o resultado
 
 - Abrir a `postUrl` retornada — deve ser um artigo em **rascunho** no blog Shopify, com o texto no formato `[TÍTULO] por R$[PREÇO] — confira: [LINK_AFILIADO]` e a imagem do produto.
