@@ -8,6 +8,13 @@ interface ShopifyConfig {
   blogId: string;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function getConfig(): ShopifyConfig {
   const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN;
   const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
@@ -58,7 +65,7 @@ export async function publishArticle(
           blogId: config.blogId,
           title: title.slice(0, 255),
           author: { name: 'PromoPost' },
-          body: `<p>${body}</p>`,
+          body: `<p>${escapeHtml(body)}</p>`,
           isPublished: false,
           image: imageUrl ? { url: imageUrl } : undefined,
         },
