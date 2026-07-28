@@ -6,3 +6,5 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 .claude-flow/
+.vercel
+.env*

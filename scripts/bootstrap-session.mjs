@@ -22,7 +22,7 @@ async function main() {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder');
+  await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub');
 
   const rl = readline.createInterface({ input: stdin, output: stdout });
   await rl.question(

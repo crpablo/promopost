@@ -1,10 +1,15 @@
 // Roda DENTRO da Vercel Sandbox (node generate-link.mjs <link-produto>).
 // Usa a sessão salva em /vercel/sandbox/session.json (storageState do Playwright).
 //
-// ATENÇÃO: os 3 seletores marcados "AJUSTAR" abaixo foram escritos sem acesso
-// ao HTML real do painel de afiliados (exige login). Antes do primeiro uso em
-// produção, abra o painel logado, inspecione os elementos reais e corrija os
-// seletores (ver docs/runbook.md).
+// Seletores confirmados contra o painel real (mercadolivre.com.br/afiliados/linkbuilder#hub)
+// em validação manual ponta-a-ponta. O link gerado usa o domínio meli.la, não
+// mercadolivre.com/sec/... como se supunha antes de testar contra o site real.
+//
+// O Mercado Livre bloqueia Chromium headless "puro" com uma página de erro
+// genérica ("Hubo un error accediendo a esta pagina..."), mesmo com sessão
+// válida — por isso o context abaixo usa user-agent real, esconde
+// navigator.webdriver e passa --disable-blink-features=AutomationControlled.
+// Sem isso, TODA navegação falha, não só a do link builder.
 
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -18,40 +23,51 @@ if (!productLink) {
 
 const storageState = JSON.parse(readFileSync('/vercel/sandbox/session.json', 'utf8'));
 
-const browser = await chromium.launch();
-const context = await browser.newContext({ storageState });
+const browser = await chromium.launch({
+  args: ['--disable-blink-features=AutomationControlled'],
+});
+const context = await browser.newContext({
+  storageState,
+  userAgent:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  viewport: { width: 1280, height: 900 },
+  locale: 'pt-BR',
+});
+await context.addInitScript(() => {
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+});
 const page = await context.newPage();
 
 try {
-  await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder', {
+  await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub', {
     waitUntil: 'domcontentloaded',
+    timeout: 45000,
   });
 
-  const loggedOut = await page
-    .locator('text=Iniciar sessão')
-    .first()
-    .isVisible()
+  const urlField = page.locator('#url-0');
+  const formVisible = await urlField
+    .isVisible({ timeout: 15000 })
     .catch(() => false);
 
-  if (loggedOut) {
+  if (!formVisible) {
     console.error('SESSION_EXPIRED');
     process.exit(1);
   }
 
-  // AJUSTAR: placeholder do campo de input do link, confirmar no painel real.
-  await page.getByPlaceholder('Cole o link do produto').fill(productLink);
+  await urlField.fill(productLink);
 
-  // AJUSTAR: texto do botão de gerar link, confirmar no painel real.
-  await page.getByRole('button', { name: 'Gerar link' }).click();
+  await page.getByRole('button', { name: 'Gerar' }).click();
 
-  // AJUSTAR: seletor do elemento que mostra o link gerado, confirmar no painel real.
   const generatedLink = await page
-    .locator('[data-testid="generated-affiliate-link"]')
-    .innerText({ timeout: 15000 });
+    .locator('#textfield-copyLink-1')
+    .inputValue({ timeout: 15000 });
+
+  if (!generatedLink || !generatedLink.startsWith('http')) {
+    throw new Error(`Campo de resultado sem link válido: "${generatedLink}"`);
+  }
 
   console.log(generatedLink.trim());
 } catch (err) {
-  await page.screenshot({ path: '/vercel/sandbox/failure.png' }).catch(() => {});
   console.error(String(err));
   process.exit(1);
 } finally {

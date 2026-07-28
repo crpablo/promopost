@@ -25,13 +25,18 @@ Logar manualmente, confirmar, copiar a URL impressa pra `ML_SESSION_BLOB_URL` na
 
 Nota: `scripts/bootstrap-session.mjs` é o único caminho que escreve a sessão no Vercel Blob — não existe função `saveSession` no código da aplicação; o próprio script faz a chamada `put()` diretamente.
 
-## 3. Ajustar os seletores do Playwright contra o site real
+## 3. Seletores do Playwright (já confirmados contra o site real)
 
-Abrir `https://www.mercadolivre.com.br/afiliados/linkbuilder` já logado (mesma sessão do passo 2) e, com o DevTools, confirmar/corrigir os 3 seletores marcados `AJUSTAR` em `src/lib/mercadolivre/generate-link.playwright.mjs` (Task 7):
+`src/lib/mercadolivre/generate-link.playwright.mjs` foi validado numa execução real em 2026-07-28. Achados que valem registrar (caso o Mercado Livre mude o painel e seja preciso reconfirmar):
 
-- placeholder do campo de link,
-- texto do botão de gerar link,
-- seletor do elemento que mostra o link gerado.
+- A URL real da ferramenta é `https://www.mercadolivre.com.br/afiliados/linkbuilder#hub` (com o `#hub` — sem ele o roteamento da SPA não carrega o formulário). Ela só aparece assim pra contas já aprovadas no Programa de Afiliados.
+- Campo de link: `textarea#url-0`.
+- Botão: `<button>` com texto `Gerar`.
+- Campo de resultado: `textarea#textfield-copyLink-1` (ler com `.inputValue()`, não `.innerText()` — é um textarea, não um texto solto).
+- O link gerado usa o domínio **`meli.la`** (ex: `https://meli.la/1p5KcpX`), não `mercadolivre.com/sec/...` como se supunha antes de testar.
+- **Importante:** o Mercado Livre bloqueia Chromium headless "puro" com uma página de erro genérica, mesmo com sessão válida — o script já usa um user-agent real, esconde `navigator.webdriver` e passa `--disable-blink-features=AutomationControlled` pra contornar isso. Sem esses três ajustes, a navegação falha por completo (não é problema de seletor).
+
+Se algo mudar no painel, repita esse processo: baixe a sessão salva (`ML_SESSION_BLOB_URL` + `BLOB_READ_WRITE_TOKEN`), abra `afiliados/linkbuilder#hub` com Playwright headless usando os mesmos ajustes anti-detecção acima, e inspecione os elementos via `evaluateAll` (mais confiável que abrir DevTools manualmente, já que a página normal também tem bloqueio de bot).
 
 ## 4. Rodar a suíte de testes local
 
@@ -64,7 +69,7 @@ Nota: links de catálogo do Mercado Livre (`/p/MLB...`) podem usar um ID de prod
 ## 7. Conferir o resultado
 
 - Abrir a `postUrl` retornada — deve ser um artigo em **rascunho** no blog Shopify, com o texto no formato `[TÍTULO] por R$[PREÇO] — confira: [LINK_AFILIADO]` e a imagem do produto.
-- Conferir no painel de afiliados do Mercado Livre que o link gerado (`/sec/...`) corresponde ao produto certo.
+- Conferir no painel de afiliados do Mercado Livre que o link gerado (domínio `meli.la`) corresponde ao produto certo.
 - Publicar o artigo manualmente no admin Shopify se o resultado estiver correto.
 
 ## 8. Se algo falhar
