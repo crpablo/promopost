@@ -8,9 +8,11 @@ export function parseItemId(link: string): string | null {
   if (!/(^|\.)mercadolivre\.com\.br$/i.test(host) && !/(^|\.)mercadolibre\.com$/i.test(host)) {
     return null;
   }
-  const match = link.match(/MLB-?(\d{6,})/i);
+  // "MLB<dígitos>" é item/catálogo comum; "MLBU<dígitos>" é produto usado
+  // (path /up/), formato descoberto testando link real do site.
+  const match = link.match(/MLB(U)?-?(\d{6,})/i);
   if (!match) {
     return null;
   }
-  return `MLB${match[1]}`;
+  return `MLB${match[1] ? 'U' : ''}${match[2]}`;
 }

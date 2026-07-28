@@ -30,4 +30,15 @@ describe('parseItemId', () => {
     const link = 'https://exemplo.com/track?ref=MLB123456';
     expect(parseItemId(link)).toBeNull();
   });
+
+  it('extrai o ID de um link de produto usado com formato /up/MLBU...', () => {
+    const link = 'https://www.mercadolivre.com.br/apple-iphone-16-pro-256-gb/up/MLBU4445659112';
+    expect(parseItemId(link)).toBe('MLBU4445659112');
+  });
+
+  it('extrai o ID ignorando parâmetros de rastreio e fragmento na URL', () => {
+    const link =
+      'https://www.mercadolivre.com.br/apple-iphone-14-pro-max-128-gb-prateado/p/MLB19615338?utm_source=whatsapp#polycard_client=search-desktop&wid=MLB4615232143&sid=search';
+    expect(parseItemId(link)).toBe('MLB19615338');
+  });
 });
