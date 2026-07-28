@@ -51,4 +51,21 @@ describe('fetchProduct', () => {
 
     await expect(fetchProduct('MLB000')).rejects.toThrow('Falha ao buscar produto no Mercado Livre: 404');
   });
+
+  it('lança erro quando o preço vem ausente ou em formato inesperado', async () => {
+    const fakeResponse = {
+      title: 'Produto sem preço',
+      price: 'gratis',
+      thumbnail: 'https://http2.mlstatic.com/thumb.jpg',
+      pictures: [],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => fakeResponse }),
+    );
+
+    await expect(fetchProduct('MLB000')).rejects.toThrow(
+      'Resposta inesperada da API do Mercado Livre: dados do produto incompletos',
+    );
+  });
 });
