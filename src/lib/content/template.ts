@@ -17,16 +17,17 @@ export function buildPostText(
   coupon?: string,
   discountedPrice?: number,
 ): string {
-  const safeTitle = escapeHtml(product.title);
   const safeLink = escapeHtml(affiliateLink);
+  const linkLine = `🔗 Confira: <a href="${safeLink}">${safeLink}</a>`;
 
   if (typeof discountedPrice === 'number') {
     const regularPrice = formatPrice(product.price);
     const discounted = formatPrice(discountedPrice);
-    const couponText = coupon ? ` com o cupom <strong>${escapeHtml(coupon)}</strong>` : '';
-    return `${safeTitle} de <s>R$${regularPrice}</s> por <strong>R$${discounted}</strong>${couponText} — confira: <a href="${safeLink}">${safeLink}</a>`;
+    const priceLine = `🔥 De <s>R$${regularPrice}</s> por <strong>R$${discounted}</strong>`;
+    const couponLine = coupon ? `<br><br>🎟️ Cupom: <strong>${escapeHtml(coupon)}</strong>` : '';
+    return `${priceLine}${couponLine}<br><br>${linkLine}`;
   }
 
   const price = formatPrice(product.price);
-  return `${safeTitle} por <strong>R$${price}</strong> — confira: <a href="${safeLink}">${safeLink}</a>`;
+  return `🏷️ <strong>R$${price}</strong><br><br>${linkLine}`;
 }

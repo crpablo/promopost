@@ -58,7 +58,7 @@ export async function publishArticle(
           blogId: config.blogId,
           title: title.slice(0, 255),
           author: { name: 'PromoPost' },
-          // `body` já vem em HTML seguro (título escapado, preço/link controlados)
+          // `body` já vem em HTML seguro (cupom/link escapados, preço controlado)
           // de buildPostText — não escapar de novo aqui.
           body: `<p>${body}</p>`,
           isPublished: false,

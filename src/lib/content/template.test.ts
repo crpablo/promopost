@@ -8,7 +8,7 @@ describe('buildPostText', () => {
       'https://meli.la/abc123',
     );
     expect(text).toBe(
-      'Fone de Ouvido Bluetooth XYZ por <strong>R$149,90</strong> — confira: <a href="https://meli.la/abc123">https://meli.la/abc123</a>',
+      '🏷️ <strong>R$149,90</strong><br><br>🔗 Confira: <a href="https://meli.la/abc123">https://meli.la/abc123</a>',
     );
   });
 
@@ -20,12 +20,14 @@ describe('buildPostText', () => {
     expect(text).toContain('<strong>R$200,00</strong>');
   });
 
-  it('escapa caracteres especiais de HTML no título do produto', () => {
+  it('escapa caracteres especiais de HTML no cupom', () => {
     const text = buildPostText(
-      { title: 'Produto <script>alert(1)</script> & cia', price: 50, imageUrl: 'https://x.com/img.jpg' },
+      { title: 'Produto X', price: 200, imageUrl: 'https://x.com/img.jpg' },
       'https://meli.la/xyz',
+      '<script>alert(1)</script> & cia',
+      150,
     );
-    expect(text).toContain('Produto &lt;script&gt;alert(1)&lt;/script&gt; &amp; cia');
+    expect(text).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; cia');
     expect(text).not.toContain('<script>');
   });
 
@@ -37,7 +39,7 @@ describe('buildPostText', () => {
       89.9,
     );
     expect(text).toBe(
-      'Fone de Ouvido Bluetooth XYZ de <s>R$149,90</s> por <strong>R$89,90</strong> com o cupom <strong>PROMO10</strong> — confira: <a href="https://meli.la/abc123">https://meli.la/abc123</a>',
+      '🔥 De <s>R$149,90</s> por <strong>R$89,90</strong><br><br>🎟️ Cupom: <strong>PROMO10</strong><br><br>🔗 Confira: <a href="https://meli.la/abc123">https://meli.la/abc123</a>',
     );
   });
 
@@ -49,7 +51,7 @@ describe('buildPostText', () => {
       150,
     );
     expect(text).toBe(
-      'Produto X de <s>R$200,00</s> por <strong>R$150,00</strong> — confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
+      '🔥 De <s>R$200,00</s> por <strong>R$150,00</strong><br><br>🔗 Confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
     );
   });
 
@@ -61,7 +63,7 @@ describe('buildPostText', () => {
       null as unknown as number | undefined,
     );
     expect(text).toBe(
-      'Produto X por <strong>R$200,00</strong> — confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
+      '🏷️ <strong>R$200,00</strong><br><br>🔗 Confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
     );
   });
 });
