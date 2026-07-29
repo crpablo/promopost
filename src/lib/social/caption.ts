@@ -22,9 +22,9 @@ export function buildSocialCaption(
     const discounted = formatPrice(discountedPrice);
     const priceLine = `🔥 De R$${regularPrice} por R$${discounted}`;
     const couponLine = coupon ? `\n\n🎟️ Cupom: ${coupon}` : '';
-    return `${priceLine}${couponLine}\n\n${linkLine}\n\n${HASHTAGS}`;
+    return `${product.title}\n\n${priceLine}${couponLine}\n\n${linkLine}\n\n${HASHTAGS}`;
   }
 
   const price = formatPrice(product.price);
-  return `🏷️ R$${price}\n\n${linkLine}\n\n${HASHTAGS}`;
+  return `${product.title}\n\n🏷️ R$${price}\n\n${linkLine}\n\n${HASHTAGS}`;
 }

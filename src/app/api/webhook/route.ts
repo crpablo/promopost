@@ -1,5 +1,6 @@
 import { buildPostText } from '@/lib/content/template';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
+import type { Product } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
 import { PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
@@ -8,6 +9,56 @@ import { postToFacebook } from '@/lib/social/facebook';
 import { postToInstagram } from '@/lib/social/instagram';
 
 export const maxDuration = 300;
+
+type SocialResult = { ok: true; postId: string } | { ok: false; error: string };
+
+function isMetaConfigured(): boolean {
+  return Boolean(
+    process.env.META_PAGE_ID && process.env.META_IG_BUSINESS_ACCOUNT_ID && process.env.META_SYSTEM_USER_TOKEN,
+  );
+}
+
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function postToSocialNetworks(
+  product: Product,
+  affiliateLink: string,
+  coupon?: string,
+  discountedPrice?: number,
+): Promise<{ facebook: SocialResult; instagram: SocialResult }> {
+  if (!isMetaConfigured()) {
+    const naoConfigurado: SocialResult = { ok: false, error: 'não configurado' };
+    return { facebook: naoConfigurado, instagram: naoConfigurado };
+  }
+
+  let caption: string;
+  try {
+    caption = buildSocialCaption(product, affiliateLink, coupon, discountedPrice);
+  } catch (err) {
+    console.error('Erro ao montar legenda social:', err);
+    const erro: SocialResult = { ok: false, error: toErrorMessage(err) };
+    return { facebook: erro, instagram: erro };
+  }
+
+  const [facebook, instagram] = await Promise.all([
+    postToFacebook(product.imageUrl, caption)
+      .then((r): SocialResult => ({ ok: true, postId: r.postId }))
+      .catch((err: unknown): SocialResult => {
+        console.error('Erro ao postar no Facebook:', err);
+        return { ok: false, error: toErrorMessage(err) };
+      }),
+    postToInstagram(product.imageUrl, caption)
+      .then((r): SocialResult => ({ ok: true, postId: r.postId }))
+      .catch((err: unknown): SocialResult => {
+        console.error('Erro ao postar no Instagram:', err);
+        return { ok: false, error: toErrorMessage(err) };
+      }),
+  ]);
+
+  return { facebook, instagram };
+}
 
 export async function POST(request: Request): Promise<Response> {
   const secret = request.headers.get('x-promopost-secret');
@@ -45,22 +96,12 @@ export async function POST(request: Request): Promise<Response> {
       { coupon: body.coupon, discountedPrice: body.discountedPrice },
     );
 
-    const caption = buildSocialCaption(result.product, result.affiliateLink, body.coupon, body.discountedPrice);
-
-    const [facebook, instagram] = await Promise.all([
-      postToFacebook(result.product.imageUrl, caption)
-        .then((r) => ({ ok: true as const, postId: r.postId }))
-        .catch((err: Error) => {
-          console.error('Erro ao postar no Facebook:', err);
-          return { ok: false as const, error: err.message };
-        }),
-      postToInstagram(result.product.imageUrl, caption)
-        .then((r) => ({ ok: true as const, postId: r.postId }))
-        .catch((err: Error) => {
-          console.error('Erro ao postar no Instagram:', err);
-          return { ok: false as const, error: err.message };
-        }),
-    ]);
+    const { facebook, instagram } = await postToSocialNetworks(
+      result.product,
+      result.affiliateLink,
+      body.coupon,
+      body.discountedPrice,
+    );
 
     return Response.json({ postUrl: result.postUrl, facebook, instagram }, { status: 200 });
   } catch (err) {

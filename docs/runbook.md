@@ -67,7 +67,7 @@ curl -X POST https://<seu-dominio>.vercel.app/api/webhook \
   -d '{"link":"https://produto.mercadolivre.com.br/MLB-1234567890-produto-exemplo-_JM"}'
 ```
 
-Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "postUrl": "..." }`.
+Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "postUrl": "...", "facebook": {...}, "instagram": {...} }` — os campos `facebook`/`instagram` vêm como `{ "ok": false, "error": "não configurado" }` se as variáveis da Meta (seção 10) ainda não estiverem configuradas. Ver seção 10.3 pro formato completo.
 
 ## 7. Conferir o resultado
 

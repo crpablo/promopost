@@ -8,7 +8,7 @@ describe('buildSocialCaption', () => {
       'https://meli.la/abc123',
     );
     expect(text).toBe(
-      '🏷️ R$149,90\n\n🔗 Confira: https://meli.la/abc123\n\n#promocao #oferta #mercadolivre #desconto',
+      'Fone de Ouvido Bluetooth XYZ\n\n🏷️ R$149,90\n\n🔗 Confira: https://meli.la/abc123\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
 
@@ -20,7 +20,7 @@ describe('buildSocialCaption', () => {
       89.9,
     );
     expect(text).toBe(
-      '🔥 De R$149,90 por R$89,90\n\n🎟️ Cupom: PROMO10\n\n🔗 Confira: https://meli.la/abc123\n\n#promocao #oferta #mercadolivre #desconto',
+      'Fone de Ouvido Bluetooth XYZ\n\n🔥 De R$149,90 por R$89,90\n\n🎟️ Cupom: PROMO10\n\n🔗 Confira: https://meli.la/abc123\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
 
@@ -32,7 +32,7 @@ describe('buildSocialCaption', () => {
       150,
     );
     expect(text).toBe(
-      '🔥 De R$200,00 por R$150,00\n\n🔗 Confira: https://meli.la/xyz\n\n#promocao #oferta #mercadolivre #desconto',
+      'Produto X\n\n🔥 De R$200,00 por R$150,00\n\n🔗 Confira: https://meli.la/xyz\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
 
@@ -44,7 +44,7 @@ describe('buildSocialCaption', () => {
       null as unknown as number | undefined,
     );
     expect(text).toBe(
-      '🏷️ R$200,00\n\n🔗 Confira: https://meli.la/xyz\n\n#promocao #oferta #mercadolivre #desconto',
+      'Produto X\n\n🏷️ R$200,00\n\n🔗 Confira: https://meli.la/xyz\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
 });
