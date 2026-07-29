@@ -61,7 +61,7 @@ export async function publishArticle(
           // `body` já vem em HTML seguro (cupom/link escapados, preço controlado)
           // de buildPostText — não escapar de novo aqui.
           body: `<p>${body}</p>`,
-          isPublished: false,
+          isPublished: true,
           image: imageUrl ? { url: imageUrl } : undefined,
         },
       },

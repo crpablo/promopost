@@ -71,9 +71,9 @@ Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "p
 
 ## 7. Conferir o resultado
 
-- Abrir a `postUrl` retornada — deve ser um artigo em **rascunho** no blog Shopify, com o texto no formato `[TÍTULO] por R$[PREÇO] — confira: [LINK_AFILIADO]` e a imagem do produto.
+- Abrir a `postUrl` retornada — deve ser um artigo **já publicado** no blog Shopify (`isPublished: true`, decisão explícita de 2026-07-29 — antes era sempre rascunho), com preço/cupom/link no formato de `template.ts` e a imagem do produto.
 - Conferir no painel de afiliados do Mercado Livre que o link gerado (domínio `meli.la`) corresponde ao produto certo.
-- Publicar o artigo manualmente no admin Shopify se o resultado estiver correto.
+- Como não há mais revisão antes de ir ao ar, uma extração errada do LLM ou um scraping de produto errado publica direto — vale acompanhar o blog com mais atenção nos primeiros dias.
 
 ## 8. Se algo falhar
 

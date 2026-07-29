@@ -13,7 +13,7 @@ describe('publishArticle', () => {
     vi.unstubAllEnvs();
   });
 
-  it('cria o artigo como rascunho e retorna a url montada', async () => {
+  it('cria o artigo já publicado e retorna a url montada', async () => {
     stubEnv();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -44,7 +44,7 @@ describe('publishArticle', () => {
     expect(url).toBe('https://minha-loja.myshopify.com/admin/api/2026-04/graphql.json');
     expect(options.headers['X-Shopify-Access-Token']).toBe('shpat_fake');
     const parsedBody = JSON.parse(options.body);
-    expect(parsedBody.variables.article.isPublished).toBe(false);
+    expect(parsedBody.variables.article.isPublished).toBe(true);
     expect(parsedBody.variables.article.blogId).toBe('gid://shopify/Blog/123');
   });
 
