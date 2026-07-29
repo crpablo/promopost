@@ -1,4 +1,5 @@
 import { generateObject } from 'ai';
+import { groq } from '@ai-sdk/groq';
 import { z } from 'zod';
 
 const PromoSchema = z.object({
@@ -15,7 +16,7 @@ export interface PromoExtraction {
   discountedPrice: number | null;
 }
 
-const EXTRACTOR_MODEL = process.env.PROMO_EXTRACTOR_MODEL ?? 'openai/gpt-5.6-luna';
+const EXTRACTOR_MODEL_ID = process.env.PROMO_EXTRACTOR_MODEL ?? 'openai/gpt-oss-20b';
 
 const PROMPT_INSTRUCTIONS = `Você recebe o texto de uma mensagem de um grupo de promoções de compras online.
 
@@ -30,7 +31,7 @@ Se a mensagem não for sobre uma promoção do Mercado Livre (ex: é conversa co
 
 export async function extractPromo(messageText: string): Promise<PromoExtraction> {
   const { object } = await generateObject({
-    model: EXTRACTOR_MODEL,
+    model: groq(EXTRACTOR_MODEL_ID),
     schema: PromoSchema,
     prompt: `${PROMPT_INSTRUCTIONS}\n\nMensagem:\n"""\n${messageText}\n"""`,
   });

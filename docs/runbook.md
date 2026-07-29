@@ -101,7 +101,9 @@ Loga com telefone + código recebido (+ senha de duas etapas, se a conta tiver).
 
 ### 9.3 Configurar variáveis de ambiente na Vercel
 
-Além das que já existem (seção 1), configure: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_BLOB_URL`, `TELEGRAM_TARGET_CHAT_ID`, `WEBHOOK_BASE_URL` (domínio de produção, ex: `https://promopost.vercel.app`), `CRON_SECRET` (qualquer string aleatória longa, escolhida por você — é o valor que o disparador externo do passo 9.4 precisa enviar no header `Authorization`).
+Além das que já existem (seção 1), configure: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_BLOB_URL`, `TELEGRAM_TARGET_CHAT_ID`, `WEBHOOK_BASE_URL` (domínio de produção, ex: `https://promopost.vercel.app`), `CRON_SECRET` (qualquer string aleatória longa, escolhida por você — é o valor que o disparador externo do passo 9.4 precisa enviar no header `Authorization`), `GROQ_API_KEY` (ver nota abaixo).
+
+**Sobre o LLM de extração:** o padrão do projeto é o Groq (`GROQ_API_KEY`, gerada grátis em console.groq.com, sem pedir cartão), modelo `openai/gpt-oss-20b` — testado e confirmado com suporte real a saída estruturada. **Não usamos o Vercel AI Gateway aqui** porque, testado ao vivo em 2026-07-29: (1) o tier gratuito do Gateway bloqueia modelos pagos como `gpt-5.6-luna` mesmo com cartão cadastrado e saldo de crédito grátis disponível — exige um *top-up* real; (2) os modelos gratuitos do próprio Gateway (`poolside/laguna-s-2.1-free`, etc.) ou tomam rate limit quase imediato ou não suportam o `responseFormat` de saída estruturada que `generateObject` precisa. Se quiser usar o Gateway mesmo assim (ex: já tem saldo pago lá), dá pra trocar `src/lib/telegram/extractPromo.ts` de volta pro padrão `model: EXTRACTOR_MODEL_ID` (string simples) — mas exige o top-up.
 
 ### 9.4 Deploy e agendamento (serviço externo de cron)
 

@@ -33,7 +33,6 @@ describe('extractPromo', () => {
     });
     expect(generateObjectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: expect.any(String),
         prompt: expect.stringContaining('Fone Bluetooth XYZ'),
       }),
     );

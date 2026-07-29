@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^4.0.15",
     "@vercel/sandbox": "^2.0.0",
     "ai": "^7.0.41",
     "input": "^1.0.1",
