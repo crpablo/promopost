@@ -118,6 +118,8 @@ Depois do deploy (`vercel deploy --prod`), configure no serviço de cron escolhi
 
 Se migrar pra Vercel Pro no futuro, basta devolver o bloco `crons` em `vercel.ts` e remover o serviço externo.
 
+**Lock contra execuções concorrentes:** `/api/telegram-poll` usa um lock no Vercel Blob (`src/lib/telegram/lock.ts`, pathname `telegram-poll.lock`, expira sozinho depois de 5min) pra evitar que duas execuções sobrepostas (cron + disparo manual, ou duas do próprio cron) processem o mesmo lote de mensagens e publiquem posts duplicados — descoberto na prática em 2026-07-29 testando manualmente por `curl` enquanto o cron externo também rodava. Se a resposta vier com `"skippedConcurrent": true`, é porque já tinha outra execução em andamento — normal, sem necessidade de ação.
+
 ### 9.5 Teste manual
 
 ```bash

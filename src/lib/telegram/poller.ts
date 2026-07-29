@@ -1,14 +1,11 @@
+import type { PromoExtraction as PromoExtractionResult } from './extractPromo';
+
 export interface TelegramMessage {
   id: number;
   text: string;
 }
 
-export interface PromoExtractionResult {
-  isMercadoLivrePromo: boolean;
-  link: string | null;
-  coupon: string | null;
-  discountedPrice: number | null;
-}
+export type { PromoExtractionResult };
 
 export interface WebhookCallResult {
   ok: boolean;
@@ -26,6 +23,8 @@ export interface PollerDeps {
     coupon?: string;
     discountedPrice?: number;
   }) => Promise<WebhookCallResult>;
+  acquireLock: () => Promise<boolean>;
+  releaseLock: () => Promise<void>;
   batchLimit?: number;
 }
 
@@ -33,6 +32,7 @@ export interface PollResult {
   processedCount: number;
   promoCount: number;
   errors: Array<{ messageId: number; error: string; text: string }>;
+  skippedConcurrent?: boolean;
 }
 
 // Cada chamada ao webhook pode levar até ~65s (Playwright + LLM); um lote
@@ -60,6 +60,19 @@ async function saveCursorOrRecordError(
 }
 
 export async function pollTelegram(deps: PollerDeps): Promise<PollResult> {
+  const locked = await deps.acquireLock();
+  if (!locked) {
+    return { processedCount: 0, promoCount: 0, errors: [], skippedConcurrent: true };
+  }
+
+  try {
+    return await runPoll(deps);
+  } finally {
+    await deps.releaseLock();
+  }
+}
+
+async function runPoll(deps: PollerDeps): Promise<PollResult> {
   const cursor = await deps.loadCursor();
   if (cursor === null) {
     const latestId = await deps.getLatestMessageId();

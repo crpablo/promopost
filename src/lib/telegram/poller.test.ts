@@ -14,6 +14,8 @@ function makeDeps(overrides: Partial<PollerDeps> = {}): PollerDeps {
       discountedPrice: null,
     }),
     callWebhook: vi.fn().mockResolvedValue({ ok: true, status: 200 }),
+    acquireLock: vi.fn().mockResolvedValue(true),
+    releaseLock: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -147,6 +149,41 @@ describe('pollTelegram', () => {
       expect(deps.saveCursor).not.toHaveBeenCalled();
       expect(deps.fetchNewMessages).not.toHaveBeenCalled();
       expect(result).toEqual({ processedCount: 0, promoCount: 0, errors: [] });
+    });
+  });
+
+  describe('lock contra execuções concorrentes', () => {
+    it('não processa nada e sinaliza skippedConcurrent quando já existe outra execução travando', async () => {
+      const deps = makeDeps({
+        acquireLock: vi.fn().mockResolvedValue(false),
+        fetchNewMessages: vi.fn().mockResolvedValue([{ id: 1, text: 'promo' }]),
+      });
+
+      const result = await pollTelegram(deps);
+
+      expect(result).toEqual({ processedCount: 0, promoCount: 0, errors: [], skippedConcurrent: true });
+      expect(deps.loadCursor).not.toHaveBeenCalled();
+      expect(deps.fetchNewMessages).not.toHaveBeenCalled();
+      expect(deps.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it('libera o lock ao final mesmo quando o processamento é bem-sucedido', async () => {
+      const deps = makeDeps({
+        fetchNewMessages: vi.fn().mockResolvedValue([{ id: 1, text: 'bom dia' }]),
+      });
+
+      await pollTelegram(deps);
+
+      expect(deps.releaseLock).toHaveBeenCalledTimes(1);
+    });
+
+    it('libera o lock mesmo quando o processamento lança um erro inesperado', async () => {
+      const deps = makeDeps({
+        loadCursor: vi.fn().mockRejectedValue(new Error('falha inesperada')),
+      });
+
+      await expect(pollTelegram(deps)).rejects.toThrow('falha inesperada');
+      expect(deps.releaseLock).toHaveBeenCalledTimes(1);
     });
   });
 

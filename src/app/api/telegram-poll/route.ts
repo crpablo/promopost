@@ -2,6 +2,7 @@ import { TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions/index.js';
 import { extractPromo } from '@/lib/telegram/extractPromo';
 import { loadCursor, saveCursor } from '@/lib/telegram/cursorStore';
+import { acquireLock, releaseLock } from '@/lib/telegram/lock';
 import { loadSession } from '@/lib/telegram/sessionStore';
 import { pollTelegram, type TelegramMessage } from '@/lib/telegram/poller';
 
@@ -97,8 +98,9 @@ async function callWebhook(body: {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ erro: 'não autorizado' }, { status: 401 });
   }
 
@@ -110,6 +112,8 @@ export async function GET(request: Request): Promise<Response> {
       saveCursor,
       extractPromo,
       callWebhook,
+      acquireLock,
+      releaseLock,
     });
 
     for (const e of result.errors) {
