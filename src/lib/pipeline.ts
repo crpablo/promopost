@@ -37,6 +37,8 @@ export class InvalidLinkError extends Error {
 
 export interface PipelineResult {
   postUrl: string;
+  product: Product;
+  affiliateLink: string;
 }
 
 export interface AffiliateResult {
@@ -92,5 +94,5 @@ export async function runPipeline(
     throw new PipelineError('shopify_publish', (err as Error).message);
   }
 
-  return { postUrl: published.url };
+  return { postUrl: published.url, product, affiliateLink };
 }

@@ -28,7 +28,11 @@ describe('runPipeline', () => {
 
     const result = await runPipeline('https://mercadolivre.com.br/MLB123', deps);
 
-    expect(result).toEqual({ postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x' });
+    expect(result).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    });
     expect(deps.fetchProductAndAffiliateLink).toHaveBeenCalledWith('https://mercadolivre.com.br/MLB123');
     expect(deps.publishArticle).toHaveBeenCalledWith(
       'Produto X',

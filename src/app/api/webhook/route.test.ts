@@ -4,12 +4,18 @@ vi.mock('@/lib/mercadolivre/parseLink', () => ({ parseItemId: vi.fn() }));
 vi.mock('@/lib/mercadolivre/affiliateLink', () => ({ fetchProductAndAffiliateLink: vi.fn() }));
 vi.mock('@/lib/content/template', () => ({ buildPostText: vi.fn() }));
 vi.mock('@/lib/shopify/publisher', () => ({ publishArticle: vi.fn() }));
+vi.mock('@/lib/social/caption', () => ({ buildSocialCaption: vi.fn() }));
+vi.mock('@/lib/social/facebook', () => ({ postToFacebook: vi.fn() }));
+vi.mock('@/lib/social/instagram', () => ({ postToInstagram: vi.fn() }));
 
 import { buildPostText } from '@/lib/content/template';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
 import { SessionExpiredError } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
+import { buildSocialCaption } from '@/lib/social/caption';
+import { postToFacebook } from '@/lib/social/facebook';
+import { postToInstagram } from '@/lib/social/instagram';
 import { POST } from './route';
 
 function makeRequest(body: unknown, secret = 'correct-secret') {
@@ -45,12 +51,73 @@ describe('POST /api/webhook', () => {
     vi.mocked(publishArticle).mockResolvedValue({
       url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
     });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
 
     expect(response.status).toBe(200);
-    expect(json).toEqual({ postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x' });
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      facebook: { ok: true, postId: 'fb-1' },
+      instagram: { ok: true, postId: 'ig-1' },
+    });
+  });
+
+  it('posta no Facebook e Instagram depois do blog publicar, e inclui os dois na resposta', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      facebook: { ok: true, postId: 'fb-1' },
+      instagram: { ok: true, postId: 'ig-1' },
+    });
+    expect(postToFacebook).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
+    expect(postToInstagram).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
+  });
+
+  it('retorna postUrl mesmo quando Facebook e Instagram falham (best-effort, não derruba o blog)', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockRejectedValue(new Error('Token inválido'));
+    vi.mocked(postToInstagram).mockRejectedValue(new Error('Imagem inválida'));
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      facebook: { ok: false, error: 'Token inválido' },
+      instagram: { ok: false, error: 'Imagem inválida' },
+    });
   });
 
   it('retorna 400 com o passo link_parse quando o link é inválido', async () => {

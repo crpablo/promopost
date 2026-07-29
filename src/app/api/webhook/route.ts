@@ -3,6 +3,9 @@ import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
 import { PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
+import { buildSocialCaption } from '@/lib/social/caption';
+import { postToFacebook } from '@/lib/social/facebook';
+import { postToInstagram } from '@/lib/social/instagram';
 
 export const maxDuration = 300;
 
@@ -41,7 +44,25 @@ export async function POST(request: Request): Promise<Response> {
       },
       { coupon: body.coupon, discountedPrice: body.discountedPrice },
     );
-    return Response.json({ postUrl: result.postUrl }, { status: 200 });
+
+    const caption = buildSocialCaption(result.product, result.affiliateLink, body.coupon, body.discountedPrice);
+
+    const [facebook, instagram] = await Promise.all([
+      postToFacebook(result.product.imageUrl, caption)
+        .then((r) => ({ ok: true as const, postId: r.postId }))
+        .catch((err: Error) => {
+          console.error('Erro ao postar no Facebook:', err);
+          return { ok: false as const, error: err.message };
+        }),
+      postToInstagram(result.product.imageUrl, caption)
+        .then((r) => ({ ok: true as const, postId: r.postId }))
+        .catch((err: Error) => {
+          console.error('Erro ao postar no Instagram:', err);
+          return { ok: false as const, error: err.message };
+        }),
+    ]);
+
+    return Response.json({ postUrl: result.postUrl, facebook, instagram }, { status: 200 });
   } catch (err) {
     console.error('Erro no pipeline PromoPost:', err);
     if (err instanceof PipelineError) {

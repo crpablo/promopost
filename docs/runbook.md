@@ -134,3 +134,38 @@ Esperado: `200` com `{ "processedCount": N, "promoCount": N, "errors": [] }`. Ma
 - Erro de conexão/autenticação do Telegram na rota do cron — a sessão pode ter expirado; repita o passo 9.2.
 - `processedCount: 0` mesmo com mensagem nova no grupo — confira se `TELEGRAM_TARGET_CHAT_ID` é o chat certo, e se a API do GramJS usada em `src/app/api/telegram-poll/route.ts` bate com a versão instalada (ver nota na Task 7 do plano de implementação) — pode precisar ajustar nomes de método/campo depois de testar contra a conta real.
 - Mensagem processada mas sem post gerado — confira o campo `errors` da resposta do cron; o texto ali indica se foi falha de extração (LLM) ou do webhook (mesma tabela de erros da seção 8).
+
+## 10. Instagram e Facebook (opcional, sub-projeto separado)
+
+Cobre a postagem automática da mesma promoção no Facebook e no Instagram, junto com o post do blog (ver `docs/superpowers/specs/2026-07-29-instagram-facebook-posting-design.md`).
+
+### 10.1 Gerar o token System User
+
+1. Acesse o Business Manager (business.facebook.com) da conta que já tem a Página do Facebook e o Instagram comercial conectados.
+2. Vá em Configurações do negócio > Usuários > Usuários do sistema > Adicionar.
+3. Crie um System User (papel Admin é o mais simples).
+4. Em "Adicionar ativos", conecte a Página do Facebook e a conta do Instagram a esse System User, com controle total.
+5. Gere um token de acesso pra esse System User com as permissões: `pages_manage_posts`, `pages_manage_engagement`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`. Esse token não expira por tempo — vai em `META_SYSTEM_USER_TOKEN`.
+
+### 10.2 Descobrir os IDs
+
+- **ID da Página:** aparece em Configurações da Página no Facebook, ou via `GET https://graph.facebook.com/v26.0/me/accounts?access_token=<token>` (lista as Páginas que o System User administra).
+- **ID da conta do Instagram:** `GET https://graph.facebook.com/v26.0/<page-id>?fields=instagram_business_account&access_token=<token>`.
+
+Configure `META_PAGE_ID` e `META_IG_BUSINESS_ACCOUNT_ID` na Vercel com os valores encontrados.
+
+### 10.3 Teste manual
+
+Depois do deploy, disparar o webhook normalmente (seção 6) com um link real do Mercado Livre e conferir na resposta os campos `facebook`/`instagram`:
+
+```json
+{ "postUrl": "...", "facebook": { "ok": true, "postId": "..." }, "instagram": { "ok": true, "postId": "..." } }
+```
+
+Conferir também que o post apareceu de fato na Página do Facebook e no perfil do Instagram, com a imagem do produto e a legenda com preço/cupom/link/hashtags.
+
+### 10.4 Se algo falhar
+
+O campo `facebook` ou `instagram` na resposta vem como `{ "ok": false, "error": "..." }` — o post do blog sai normalmente mesmo assim. O erro também fica nos logs da função (`console.error`). Erros comuns:
+- Token revogado ou permissão removida no Business Manager — gere um novo token (seção 10.1).
+- Imagem do produto inacessível pro fetcher da Meta — confira se a URL da imagem do Mercado Livre abre normalmente num navegador anônimo.
