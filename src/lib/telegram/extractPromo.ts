@@ -15,7 +15,7 @@ export interface PromoExtraction {
   discountedPrice: number | null;
 }
 
-const EXTRACTOR_MODEL = process.env.PROMO_EXTRACTOR_MODEL ?? 'openai/gpt-4o-mini';
+const EXTRACTOR_MODEL = process.env.PROMO_EXTRACTOR_MODEL ?? 'openai/gpt-5.6-luna';
 
 const PROMPT_INSTRUCTIONS = `Você recebe o texto de uma mensagem de um grupo de promoções de compras online.
 

@@ -101,11 +101,19 @@ Loga com telefone + código recebido (+ senha de duas etapas, se a conta tiver).
 
 ### 9.3 Configurar variáveis de ambiente na Vercel
 
-Além das que já existem (seção 1), configure: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_BLOB_URL`, `TELEGRAM_TARGET_CHAT_ID`, `WEBHOOK_BASE_URL` (domínio de produção, ex: `https://promopost.vercel.app`), `CRON_SECRET` (Vercel gera automaticamente esse valor e envia no header da chamada do cron — configure o mesmo valor como env var do projeto).
+Além das que já existem (seção 1), configure: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_BLOB_URL`, `TELEGRAM_TARGET_CHAT_ID`, `WEBHOOK_BASE_URL` (domínio de produção, ex: `https://promopost.vercel.app`), `CRON_SECRET` (qualquer string aleatória longa, escolhida por você — é o valor que o disparador externo do passo 9.4 precisa enviar no header `Authorization`).
 
-### 9.4 Deploy e verificação do cron
+### 9.4 Deploy e agendamento (serviço externo de cron)
 
-Depois do deploy (`vercel deploy --prod`), confira em Project Settings > Cron Jobs se `/api/telegram-poll` aparece agendado a cada 3 minutos.
+**Importante:** contas Vercel Hobby só permitem cron jobs nativos com frequência diária — um agendamento a cada poucos minutos (necessário aqui) faz o deploy inteiro falhar com `Hobby accounts are limited to daily cron jobs`. Por isso `vercel.ts` não declara `crons`, e a rota `/api/telegram-poll` é disparada por um serviço externo gratuito de cron (ex: [cron-job.org](https://cron-job.org)), não pelo cron nativo da Vercel.
+
+Depois do deploy (`vercel deploy --prod`), configure no serviço de cron escolhido:
+- **URL:** `https://promopost.vercel.app/api/telegram-poll`
+- **Método:** `GET`
+- **Frequência:** a cada 3 minutos
+- **Header:** `Authorization: Bearer <valor do CRON_SECRET>`
+
+Se migrar pra Vercel Pro no futuro, basta devolver o bloco `crons` em `vercel.ts` e remover o serviço externo.
 
 ### 9.5 Teste manual
 
