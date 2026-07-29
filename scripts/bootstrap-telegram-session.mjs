@@ -37,7 +37,7 @@ async function main() {
     phoneNumber: async () =>
       await input.text('Número de telefone (com código do país, ex: +5511999999999): '),
     password: async () =>
-      await input.text('Senha de verificação em duas etapas (deixe em branco se não tiver): '),
+      await input.password('Senha de verificação em duas etapas (deixe em branco se não tiver): '),
     phoneCode: async () => await input.text('Código recebido por SMS/Telegram: '),
     onError: (err) => console.error(err),
   });

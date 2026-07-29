@@ -66,4 +66,10 @@ describe('saveCursor', () => {
       expect.objectContaining({ access: 'private', allowOverwrite: true, addRandomSuffix: false }),
     );
   });
+
+  it('lança erro em português quando o upload do cursor falha', async () => {
+    putMock.mockRejectedValue(new Error('network error'));
+
+    await expect(saveCursor(4242)).rejects.toThrow('Falha ao salvar cursor do Telegram: network error');
+  });
 });

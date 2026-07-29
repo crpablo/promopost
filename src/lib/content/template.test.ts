@@ -52,4 +52,16 @@ describe('buildPostText', () => {
       'Produto X de <s>R$200,00</s> por <strong>R$150,00</strong> — confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
     );
   });
+
+  it('cai no caminho de preço único quando discountedPrice não é um número (defesa contra caller malformado)', () => {
+    const text = buildPostText(
+      { title: 'Produto X', price: 200, imageUrl: 'https://x.com/img.jpg' },
+      'https://meli.la/xyz',
+      undefined,
+      null as unknown as number | undefined,
+    );
+    expect(text).toBe(
+      'Produto X por <strong>R$200,00</strong> — confira: <a href="https://meli.la/xyz">https://meli.la/xyz</a>',
+    );
+  });
 });

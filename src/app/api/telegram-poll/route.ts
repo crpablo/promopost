@@ -7,8 +7,7 @@ import { pollTelegram, type TelegramMessage } from '@/lib/telegram/poller';
 
 export const maxDuration = 300;
 
-async function fetchNewMessages(afterId: number | null): Promise<TelegramMessage[]> {
-  const sessionString = await loadSession();
+function readTelegramEnv(): { apiId: number; apiHash: string; chatId: string } {
   const apiId = Number(process.env.TELEGRAM_API_ID);
   const apiHash = process.env.TELEGRAM_API_HASH;
   const chatId = process.env.TELEGRAM_TARGET_CHAT_ID;
@@ -20,12 +19,24 @@ async function fetchNewMessages(afterId: number | null): Promise<TelegramMessage
     throw new Error('TELEGRAM_TARGET_CHAT_ID não configurado');
   }
 
+  return { apiId, apiHash, chatId };
+}
+
+async function fetchNewMessages(afterId: number | null): Promise<TelegramMessage[]> {
+  const { apiId, apiHash, chatId } = readTelegramEnv();
+  const sessionString = await loadSession();
+
   const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
     connectionRetries: 3,
   });
   await client.connect();
 
   try {
+    // StringSession.save() não persiste o cache de entidades/accessHash, então
+    // toda invocação do cron é um "cold start" pro cliente — getDialogs()
+    // popula esse cache antes do getEntity() abaixo.
+    await client.getDialogs({ limit: 100 });
+
     const entity = await client.getEntity(chatId);
     const rawMessages = await client.getMessages(entity, {
       limit: 20,
@@ -36,6 +47,27 @@ async function fetchNewMessages(afterId: number | null): Promise<TelegramMessage
     return rawMessages
       .filter((m) => typeof m.message === 'string' && m.message.trim().length > 0)
       .map((m) => ({ id: m.id, text: m.message }));
+  } finally {
+    await client.disconnect();
+  }
+}
+
+async function getLatestMessageId(): Promise<number | null> {
+  const { apiId, apiHash, chatId } = readTelegramEnv();
+  const sessionString = await loadSession();
+
+  const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
+    connectionRetries: 3,
+  });
+  await client.connect();
+
+  try {
+    await client.getDialogs({ limit: 100 });
+
+    const entity = await client.getEntity(chatId);
+    const messages = await client.getMessages(entity, { limit: 1 });
+
+    return messages[0]?.id ?? null;
   } finally {
     await client.disconnect();
   }
@@ -73,11 +105,17 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const result = await pollTelegram({
       fetchNewMessages,
+      getLatestMessageId,
       loadCursor,
       saveCursor,
       extractPromo,
       callWebhook,
     });
+
+    for (const e of result.errors) {
+      console.error(`Telegram message ${e.messageId} falhou: ${e.error} — texto: ${e.text.slice(0, 200)}`);
+    }
+
     return Response.json(result, { status: 200 });
   } catch (err) {
     console.error('Erro no poller do Telegram:', err);

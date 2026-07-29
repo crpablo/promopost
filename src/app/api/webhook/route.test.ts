@@ -113,4 +113,28 @@ describe('POST /api/webhook', () => {
       79.9,
     );
   });
+
+  it('retorna 400 com erro cupom inválido quando coupon não é string', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({ link: 'https://mercadolivre.com.br/MLB123', coupon: 123 }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'cupom inválido' });
+  });
+
+  it('retorna 400 com erro preço com desconto inválido quando discountedPrice não é number', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({ link: 'https://mercadolivre.com.br/MLB123', discountedPrice: null }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'preço com desconto inválido' });
+  });
 });

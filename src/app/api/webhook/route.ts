@@ -23,6 +23,13 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ erro: 'link do produto não informado' }, { status: 400 });
   }
 
+  if (body.coupon !== undefined && typeof body.coupon !== 'string') {
+    return Response.json({ erro: 'cupom inválido' }, { status: 400 });
+  }
+  if (body.discountedPrice !== undefined && typeof body.discountedPrice !== 'number') {
+    return Response.json({ erro: 'preço com desconto inválido' }, { status: 400 });
+  }
+
   try {
     const result = await runPipeline(
       body.link,

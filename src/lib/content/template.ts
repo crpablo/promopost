@@ -20,7 +20,7 @@ export function buildPostText(
   const safeTitle = escapeHtml(product.title);
   const safeLink = escapeHtml(affiliateLink);
 
-  if (discountedPrice !== undefined) {
+  if (typeof discountedPrice === 'number') {
     const regularPrice = formatPrice(product.price);
     const discounted = formatPrice(discountedPrice);
     const couponText = coupon ? ` com o cupom <strong>${escapeHtml(coupon)}</strong>` : '';

@@ -4,7 +4,8 @@ import { pollTelegram, type PollerDeps } from './poller';
 function makeDeps(overrides: Partial<PollerDeps> = {}): PollerDeps {
   return {
     fetchNewMessages: vi.fn().mockResolvedValue([]),
-    loadCursor: vi.fn().mockResolvedValue(null),
+    getLatestMessageId: vi.fn().mockResolvedValue(999),
+    loadCursor: vi.fn().mockResolvedValue(999),
     saveCursor: vi.fn().mockResolvedValue(undefined),
     extractPromo: vi.fn().mockResolvedValue({
       isMercadoLivrePromo: false,
@@ -70,7 +71,9 @@ describe('pollTelegram', () => {
 
     const result = await pollTelegram(deps);
 
-    expect(result.errors).toEqual([{ messageId: 12, error: 'Falha na extração: LLM indisponível' }]);
+    expect(result.errors).toEqual([
+      { messageId: 12, error: 'Falha na extração: LLM indisponível', text: 'x' },
+    ]);
     expect(deps.saveCursor).toHaveBeenCalledWith(12);
   });
 
@@ -89,7 +92,9 @@ describe('pollTelegram', () => {
     const result = await pollTelegram(deps);
 
     expect(result.promoCount).toBe(0);
-    expect(result.errors).toEqual([{ messageId: 13, error: 'Webhook retornou status 502' }]);
+    expect(result.errors).toEqual([
+      { messageId: 13, error: 'Webhook retornou status 502', text: 'promo' },
+    ]);
     expect(deps.saveCursor).toHaveBeenCalledWith(13);
   });
 
@@ -112,5 +117,61 @@ describe('pollTelegram', () => {
     await pollTelegram(deps);
 
     expect(deps.fetchNewMessages).toHaveBeenCalledWith(999);
+  });
+
+  describe('primeira execução (cursor nulo)', () => {
+    it('semeia o cursor com a mensagem mais recente sem processar nada, quando getLatestMessageId retorna um id', async () => {
+      const deps = makeDeps({
+        loadCursor: vi.fn().mockResolvedValue(null),
+        getLatestMessageId: vi.fn().mockResolvedValue(500),
+      });
+
+      const result = await pollTelegram(deps);
+
+      expect(deps.saveCursor).toHaveBeenCalledWith(500);
+      expect(deps.saveCursor).toHaveBeenCalledTimes(1);
+      expect(deps.fetchNewMessages).not.toHaveBeenCalled();
+      expect(deps.extractPromo).not.toHaveBeenCalled();
+      expect(deps.callWebhook).not.toHaveBeenCalled();
+      expect(result).toEqual({ processedCount: 0, promoCount: 0, errors: [] });
+    });
+
+    it('não salva cursor quando getLatestMessageId também retorna null (canal vazio)', async () => {
+      const deps = makeDeps({
+        loadCursor: vi.fn().mockResolvedValue(null),
+        getLatestMessageId: vi.fn().mockResolvedValue(null),
+      });
+
+      const result = await pollTelegram(deps);
+
+      expect(deps.saveCursor).not.toHaveBeenCalled();
+      expect(deps.fetchNewMessages).not.toHaveBeenCalled();
+      expect(result).toEqual({ processedCount: 0, promoCount: 0, errors: [] });
+    });
+  });
+
+  describe('falha ao salvar o cursor', () => {
+    it('para o lote imediatamente quando saveCursor falha na primeira mensagem, sem processar as seguintes', async () => {
+      const messages = [1, 2, 3].map((id) => ({ id, text: `msg ${id}` }));
+      const extractPromo = vi.fn().mockResolvedValue({
+        isMercadoLivrePromo: false,
+        link: null,
+        coupon: null,
+        discountedPrice: null,
+      });
+      const deps = makeDeps({
+        fetchNewMessages: vi.fn().mockResolvedValue(messages),
+        extractPromo,
+        saveCursor: vi.fn().mockRejectedValue(new Error('Falha ao salvar cursor do Telegram: 500')),
+      });
+
+      const result = await pollTelegram(deps);
+
+      expect(extractPromo).toHaveBeenCalledTimes(1);
+      expect(result.processedCount).toBe(1);
+      expect(result.errors).toEqual([
+        { messageId: 1, error: 'Falha ao salvar cursor do Telegram: 500', text: 'msg 1' },
+      ]);
+    });
   });
 });

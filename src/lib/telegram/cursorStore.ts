@@ -20,11 +20,15 @@ export async function loadCursor(): Promise<number | null> {
 }
 
 export async function saveCursor(messageId: number): Promise<void> {
-  await put(CURSOR_PATHNAME, JSON.stringify({ lastMessageId: messageId }), {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json',
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
+  try {
+    await put(CURSOR_PATHNAME, JSON.stringify({ lastMessageId: messageId }), {
+      access: 'private',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/json',
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+  } catch (err) {
+    throw new Error(`Falha ao salvar cursor do Telegram: ${(err as Error).message}`);
+  }
 }
