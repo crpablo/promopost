@@ -62,7 +62,7 @@ try {
   await page.goto(productLink, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(1500);
 
-  const resolvedUrl = page.url();
+  let resolvedUrl = page.url();
   let resolvedHost;
   try {
     resolvedHost = new URL(resolvedUrl).hostname;
@@ -75,6 +75,19 @@ try {
   if (!isMercadoLivre) {
     console.error(`LINK_NOT_MERCADOLIVRE (resolvido para: ${resolvedUrl})`);
     process.exit(1);
+  }
+
+  // 0.5. Encurtadores de terceiro (ex: go.promozone.ai) às vezes caem numa
+  // página de "Perfil Social" do afiliado no Mercado Livre em vez de ir
+  // direto pro produto — essa página tem um botão "Ir para produto" que
+  // leva pra ficha real (descoberto em validação manual real, 2026-07-29).
+  // Se existir, segue esse link antes de tentar extrair título/preço.
+  const irParaProdutoLink = page.getByRole('link', { name: /ir para produto/i }).first();
+  const productHref = await irParaProdutoLink.getAttribute('href', { timeout: 5000 }).catch(() => null);
+  if (productHref) {
+    await page.goto(productHref, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    resolvedUrl = page.url();
   }
 
   // 1. Dados do produto (já estamos na página, resolvida acima)
