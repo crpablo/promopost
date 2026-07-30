@@ -13,10 +13,18 @@ function formatPrice(value: number): string {
 // silenciosamente omitidas da imagem final. Buscamos a imagem e convertemos
 // pro Satori conseguir renderizar. Usamos JPEG (não PNG) porque comprime
 // muito melhor que PNG pra foto, reduzindo o tamanho da resposta.
+// Também limitamos a resolução da imagem de origem ao tamanho do frame final
+// (1080x1920): testes ao vivo mostraram que o tamanho da resposta escala com
+// a resolução da imagem de origem mesmo o canvas de saída sendo fixo — uma
+// origem maior não melhora o resultado (que é sempre recortado/cover pro
+// mesmo frame), só infla o payload da resposta.
 async function toRenderableImage(imageUrl: string): Promise<string> {
   const response = await fetch(imageUrl);
   const arrayBuffer = await response.arrayBuffer();
-  const jpegBuffer = await sharp(Buffer.from(arrayBuffer)).jpeg({ quality: 85 }).toBuffer();
+  const jpegBuffer = await sharp(Buffer.from(arrayBuffer))
+    .resize({ width: 1080, height: 1920, fit: 'cover' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
   return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
 }
 
