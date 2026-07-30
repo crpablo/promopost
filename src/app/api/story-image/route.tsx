@@ -8,6 +8,21 @@ function formatPrice(value: number): string {
   });
 }
 
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+const ALLOWED_IMAGE_HOSTS = [/(^|\.)mlstatic\.com$/i];
+
+function isAllowedImageHost(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return ALLOWED_IMAGE_HOSTS.some((pattern) => pattern.test(hostname));
+  } catch {
+    return false;
+  }
+}
+
 // O Satori (motor de renderização do next/og) não decodifica imagens WebP —
 // fotos de produto (ex.: Mercado Livre) costumam vir nesse formato e são
 // silenciosamente omitidas da imagem final. Buscamos a imagem e convertemos
@@ -20,6 +35,9 @@ function formatPrice(value: number): string {
 // mesmo frame), só infla o payload da resposta.
 async function toRenderableImage(imageUrl: string): Promise<string> {
   const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Falha ao buscar a imagem do produto: ${response.status}`);
+  }
   const arrayBuffer = await response.arrayBuffer();
   const jpegBuffer = await sharp(Buffer.from(arrayBuffer))
     .resize({ width: 1080, height: 1920, fit: 'cover' })
@@ -43,8 +61,19 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
+  if (!isAllowedImageHost(imageUrl)) {
+    return Response.json({ erro: 'Host da imagem não permitido' }, { status: 400 });
+  }
+
   const price = Number(priceParam);
   const discountedPrice = discountedPriceParam ? Number(discountedPriceParam) : undefined;
+
+  if (!Number.isFinite(price) || price < 0) {
+    return Response.json({ erro: 'Parâmetro price inválido' }, { status: 400 });
+  }
+  if (discountedPrice !== undefined && (!Number.isFinite(discountedPrice) || discountedPrice < 0)) {
+    return Response.json({ erro: 'Parâmetro discountedPrice inválido' }, { status: 400 });
+  }
 
   try {
     const productImage = await toRenderableImage(imageUrl);
@@ -129,8 +158,9 @@ export async function GET(request: Request): Promise<Response> {
       { width: 1080, height: 1920 },
     );
   } catch (err) {
+    console.error('Erro ao gerar imagem do Story:', err);
     return Response.json(
-      { erro: `Falha ao gerar imagem do Story: ${(err as Error).message}` },
+      { erro: `Falha ao gerar imagem do Story: ${toErrorMessage(err)}` },
       { status: 500 },
     );
   }

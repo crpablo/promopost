@@ -178,7 +178,7 @@ O campo `facebook` ou `instagram` na resposta vem como `{ "ok": false, "error": 
 
 ### 10.5 Stories do Instagram
 
-O mesmo gatilho do feed também posta um Story (imagem do produto + preço/cupom desenhados sobre a foto, sem link nem legenda — a API do Instagram não suporta nenhum dos dois nesse tipo de mídia). Usa as mesmas variáveis `META_IG_BUSINESS_ACCOUNT_ID`/`META_SYSTEM_USER_TOKEN` já configuradas na seção 10.1, mais `WEBHOOK_BASE_URL` (já configurada na seção 9.3, reaproveitada aqui).
+O mesmo gatilho do feed também posta um Story (imagem do produto + preço/cupom desenhados sobre a foto, sem link nem legenda — a API do Instagram não suporta nenhum dos dois nesse tipo de mídia). Usa as mesmas variáveis `META_IG_BUSINESS_ACCOUNT_ID`/`META_SYSTEM_USER_TOKEN` já configuradas na seção 10.1, mais `WEBHOOK_BASE_URL` (já configurada na seção 9.3, reaproveitada aqui). Aqui especificamente `WEBHOOK_BASE_URL` precisa apontar pra um deploy genuinamente público: uma URL de preview da Vercel (que vem com Deployment Protection ligado por padrão) ou `localhost` falham silenciosamente, porque os servidores da Meta precisam conseguir buscar `/api/story-image` direto da internet pública.
 
 A resposta do webhook ganha um terceiro campo, `story`, no mesmo formato de `facebook`/`instagram`:
 
