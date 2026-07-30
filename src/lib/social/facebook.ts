@@ -16,8 +16,24 @@ function getConfig(): FacebookConfig {
   return { pageId, accessToken };
 }
 
+async function getPageAccessToken(pageId: string, systemUserToken: string): Promise<string> {
+  const res = await fetch(
+    `https://graph.facebook.com/v26.0/${pageId}?fields=access_token&access_token=${systemUserToken}`,
+  );
+  const json = await res.json();
+  if (!res.ok || json.error || typeof json.access_token !== 'string') {
+    throw new Error(`Falha ao obter token de acesso da Página: ${json.error?.message ?? res.status}`);
+  }
+  return json.access_token;
+}
+
 export async function postToFacebook(imageUrl: string, caption: string): Promise<SocialPostResult> {
   const config = getConfig();
+  // Um token de Usuário do Sistema não posta direto na Página — a API exige
+  // o token de acesso específico da Página, obtido via troca com o token do
+  // Usuário do Sistema (descoberto em validação real: postar direto com o
+  // token do Usuário do Sistema falha com "(#200) publish_actions...").
+  const pageAccessToken = await getPageAccessToken(config.pageId, config.accessToken);
 
   const res = await fetch(`https://graph.facebook.com/v26.0/${config.pageId}/photos`, {
     method: 'POST',
@@ -25,7 +41,7 @@ export async function postToFacebook(imageUrl: string, caption: string): Promise
     body: JSON.stringify({
       url: imageUrl,
       caption,
-      access_token: config.accessToken,
+      access_token: pageAccessToken,
     }),
   });
 

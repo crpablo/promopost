@@ -10,20 +10,22 @@ describe('postToInstagram', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    vi.useRealTimers();
   });
 
-  it('cria o container de mídia e depois publica, retornando o postId', async () => {
+  it('cria o container, espera ficar pronto (FINISHED) e depois publica, retornando o postId', async () => {
     stubEnv();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'container_1' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: 'FINISHED' }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'media_999' }) });
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await postToInstagram('https://x.com/img.jpg', 'legenda do post');
 
     expect(result).toEqual({ postId: 'media_999' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     const [createUrl, createOptions] = fetchMock.mock.calls[0];
     expect(createUrl).toBe('https://graph.facebook.com/v26.0/17841400000000000/media');
@@ -33,12 +35,49 @@ describe('postToInstagram', () => {
       access_token: 'fake-token',
     });
 
-    const [publishUrl, publishOptions] = fetchMock.mock.calls[1];
+    const [statusUrl] = fetchMock.mock.calls[1];
+    expect(statusUrl).toBe(
+      'https://graph.facebook.com/v26.0/container_1?fields=status_code&access_token=fake-token',
+    );
+
+    const [publishUrl, publishOptions] = fetchMock.mock.calls[2];
     expect(publishUrl).toBe('https://graph.facebook.com/v26.0/17841400000000000/media_publish');
     expect(JSON.parse(publishOptions.body)).toEqual({
       creation_id: 'container_1',
       access_token: 'fake-token',
     });
+  });
+
+  it('espera o container sair de IN_PROGRESS antes de publicar', async () => {
+    vi.useFakeTimers();
+    stubEnv();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'container_1' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: 'IN_PROGRESS' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: 'FINISHED' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'media_999' }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resultPromise = postToInstagram('https://x.com/img.jpg', 'legenda do post');
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result).toEqual({ postId: 'media_999' });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('lança erro quando o container fica com status ERROR', async () => {
+    stubEnv();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'container_1' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: 'ERROR' }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(postToInstagram('https://x.com/img.jpg', 'legenda')).rejects.toThrow(
+      'Falha ao processar mídia do Instagram: status ERROR no container',
+    );
   });
 
   it('lança erro quando a criação do container falha', async () => {
@@ -61,6 +100,7 @@ describe('postToInstagram', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'container_1' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: 'FINISHED' }) })
       .mockResolvedValueOnce({
         ok: false,
         json: async () => ({ error: { message: 'Container expirado' } }),

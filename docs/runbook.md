@@ -141,11 +141,14 @@ Cobre a postagem automática da mesma promoção no Facebook e no Instagram, jun
 
 ### 10.1 Gerar o token System User
 
+**Descoberto em validação real (2026-07-29):** o Business Manager exige que exista um **app** vinculado ao portfólio empresarial antes de deixar criar um Usuário do Sistema — não dá pra pular direto pro Usuário do Sistema como o passo 2 abaixo sugere isoladamente. Por isso o passo 0 abaixo vem primeiro.
+
+0. Configurações do negócio > Contas > Apps > Adicionar/Criar app. Tipo "Negócios" serve — é só um container de autenticação, não precisa configurar nenhum produto de verdade. Em "Casos de uso", adiciona **"Gerenciar tudo na sua Página"** e **"Gerenciar mensagens e conteúdo no Instagram"**, e em cada um marca as permissões da lista abaixo (passo 5). **Não** complete o fluxo de "Configurar o login da empresa no Instagram" (é um OAuth interativo pra apps de terceiro — não é o que usamos aqui).
 1. Acesse o Business Manager (business.facebook.com) da conta que já tem a Página do Facebook e o Instagram comercial conectados.
 2. Vá em Configurações do negócio > Usuários > Usuários do sistema > Adicionar.
 3. Crie um System User (papel Admin é o mais simples).
-4. Em "Adicionar ativos", conecte a Página do Facebook e a conta do Instagram a esse System User, com controle total.
-5. Gere um token de acesso pra esse System User com as permissões: `pages_manage_posts`, `pages_manage_engagement`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`. Esse token não expira por tempo — vai em `META_SYSTEM_USER_TOKEN`.
+4. Em "Adicionar ativos": conecte a Página do Facebook e a conta do Instagram a esse System User com controle total (categoria "Páginas" e "Contas do Instagram") — **e também conecte o app criado no passo 0** (categoria "Apps", controle total). Sem isso, a tela de gerar token mostra "Nenhuma permissão disponível".
+5. Gere um token de acesso pra esse System User, escolhendo o app do passo 0, com as permissões: `pages_manage_posts`, `pages_manage_engagement`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`. Duração: **"Nunca"** (não expira por tempo) — vai em `META_SYSTEM_USER_TOKEN`.
 
 ### 10.2 Descobrir os IDs
 
@@ -169,3 +172,6 @@ Conferir também que o post apareceu de fato na Página do Facebook e no perfil 
 O campo `facebook` ou `instagram` na resposta vem como `{ "ok": false, "error": "..." }` — o post do blog sai normalmente mesmo assim. O erro também fica nos logs da função (`console.error`). Erros comuns:
 - Token revogado ou permissão removida no Business Manager — gere um novo token (seção 10.1).
 - Imagem do produto inacessível pro fetcher da Meta — confira se a URL da imagem do Mercado Livre abre normalmente num navegador anônimo.
+- **Já corrigidos no código, registrados aqui pra referência caso reapareçam:**
+  - Facebook: `(#200) The permission(s) publish_actions are not available` — o token do Usuário do Sistema não posta direto na Página; `facebook.ts` já troca ele por um token de Página (`GET /{page-id}?fields=access_token`) antes de postar. Se esse erro voltar, o Usuário do Sistema pode ter perdido acesso à Página (confira seção 10.1, passo 4).
+  - Instagram: `Media ID is not available` — o Instagram processa a imagem de forma assíncrona depois de criar o container; `instagram.ts` já espera o `status_code` virar `FINISHED` (até 10 tentativas, 2s entre cada) antes de publicar. Se esse erro voltar mesmo assim, a imagem pode ser grande/lenta demais pro Instagram buscar dentro desse tempo — considere aumentar `CONTAINER_POLL_MAX_ATTEMPTS`.
