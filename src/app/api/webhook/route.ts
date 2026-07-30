@@ -6,7 +6,7 @@ import { PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
-import { postToInstagram } from '@/lib/social/instagram';
+import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 
 export const maxDuration = 300;
 
@@ -22,16 +22,47 @@ function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function buildStoryImageUrl(product: Product, coupon?: string, discountedPrice?: number): string {
+  const baseUrl = process.env.WEBHOOK_BASE_URL;
+  if (!baseUrl) {
+    throw new Error('WEBHOOK_BASE_URL não configurado');
+  }
+  const params = new URLSearchParams({
+    imageUrl: product.imageUrl,
+    title: product.title,
+    price: String(product.price),
+  });
+  if (typeof discountedPrice === 'number') {
+    params.set('discountedPrice', String(discountedPrice));
+  }
+  if (coupon) {
+    params.set('coupon', coupon);
+  }
+  return `${baseUrl}/api/story-image?${params.toString()}`;
+}
+
 async function postToSocialNetworks(
   product: Product,
   affiliateLink: string,
   coupon?: string,
   discountedPrice?: number,
-): Promise<{ facebook: SocialResult; instagram: SocialResult }> {
+): Promise<{ facebook: SocialResult; instagram: SocialResult; story: SocialResult }> {
   if (!isMetaConfigured()) {
     const naoConfigurado: SocialResult = { ok: false, error: 'não configurado' };
-    return { facebook: naoConfigurado, instagram: naoConfigurado };
+    return { facebook: naoConfigurado, instagram: naoConfigurado, story: naoConfigurado };
   }
+
+  // O Story não depende da legenda do feed — usa dados brutos do produto
+  // direto na URL da imagem, então começa em paralelo, independente do
+  // resultado de buildSocialCaption abaixo.
+  const storyResultPromise: Promise<SocialResult> = Promise.resolve()
+    .then(() => buildStoryImageUrl(product, coupon, discountedPrice))
+    .then((storyImageUrl) => postStoryToInstagram(storyImageUrl))
+    .then((r): SocialResult => ({ ok: true, postId: r.postId }))
+    .catch((err: unknown): SocialResult => {
+      console.error('Erro ao postar Story no Instagram:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    });
 
   let caption: string;
   try {
@@ -39,10 +70,11 @@ async function postToSocialNetworks(
   } catch (err) {
     console.error('Erro ao montar legenda social:', err);
     const erro: SocialResult = { ok: false, error: toErrorMessage(err) };
-    return { facebook: erro, instagram: erro };
+    const story = await storyResultPromise;
+    return { facebook: erro, instagram: erro, story };
   }
 
-  const [facebook, instagram] = await Promise.all([
+  const [facebook, instagram, story] = await Promise.all([
     postToFacebook(product.imageUrl, caption)
       .then((r): SocialResult => ({ ok: true, postId: r.postId }))
       .catch((err: unknown): SocialResult => {
@@ -55,9 +87,10 @@ async function postToSocialNetworks(
         console.error('Erro ao postar no Instagram:', err);
         return { ok: false, error: toErrorMessage(err) };
       }),
+    storyResultPromise,
   ]);
 
-  return { facebook, instagram };
+  return { facebook, instagram, story };
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -96,14 +129,14 @@ export async function POST(request: Request): Promise<Response> {
       { coupon: body.coupon, discountedPrice: body.discountedPrice },
     );
 
-    const { facebook, instagram } = await postToSocialNetworks(
+    const { facebook, instagram, story } = await postToSocialNetworks(
       result.product,
       result.affiliateLink,
       body.coupon,
       body.discountedPrice,
     );
 
-    return Response.json({ postUrl: result.postUrl, facebook, instagram }, { status: 200 });
+    return Response.json({ postUrl: result.postUrl, facebook, instagram, story }, { status: 200 });
   } catch (err) {
     console.error('Erro no pipeline PromoPost:', err);
     if (err instanceof PipelineError) {

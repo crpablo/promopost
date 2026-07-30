@@ -175,3 +175,17 @@ O campo `facebook` ou `instagram` na resposta vem como `{ "ok": false, "error": 
 - **Já corrigidos no código, registrados aqui pra referência caso reapareçam:**
   - Facebook: `(#200) The permission(s) publish_actions are not available` — o token do Usuário do Sistema não posta direto na Página; `facebook.ts` já troca ele por um token de Página (`GET /{page-id}?fields=access_token`) antes de postar. Se esse erro voltar, o Usuário do Sistema pode ter perdido acesso à Página (confira seção 10.1, passo 4).
   - Instagram: `Media ID is not available` — o Instagram processa a imagem de forma assíncrona depois de criar o container; `instagram.ts` já espera o `status_code` virar `FINISHED` (até 10 tentativas, 2s entre cada) antes de publicar. Se esse erro voltar mesmo assim, a imagem pode ser grande/lenta demais pro Instagram buscar dentro desse tempo — considere aumentar `CONTAINER_POLL_MAX_ATTEMPTS`.
+
+### 10.5 Stories do Instagram
+
+O mesmo gatilho do feed também posta um Story (imagem do produto + preço/cupom desenhados sobre a foto, sem link nem legenda — a API do Instagram não suporta nenhum dos dois nesse tipo de mídia). Usa as mesmas variáveis `META_IG_BUSINESS_ACCOUNT_ID`/`META_SYSTEM_USER_TOKEN` já configuradas na seção 10.1, mais `WEBHOOK_BASE_URL` (já configurada na seção 9.3, reaproveitada aqui).
+
+A resposta do webhook ganha um terceiro campo, `story`, no mesmo formato de `facebook`/`instagram`:
+
+```json
+{ "postUrl": "...", "facebook": {...}, "instagram": {...}, "story": { "ok": true, "postId": "..." } }
+```
+
+Pra conferir o resultado visual da imagem gerada antes de postar de verdade, abra direto no navegador: `https://promopost.vercel.app/api/story-image?imageUrl=<url da foto>&title=<nome>&price=<preço>&discountedPrice=<preço com desconto, opcional>&coupon=<cupom, opcional>` (parâmetros de query com URL-encoding).
+
+Se `story` vier com erro: mesma tabela de causas prováveis da seção 10.4 (token/permissão, imagem inacessível) — mais um caso específico do Story: `WEBHOOK_BASE_URL não configurado` significa que essa variável (usada aqui pra montar a URL pública da imagem) está faltando.
