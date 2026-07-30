@@ -1,0 +1,122 @@
+import { ImageResponse } from 'next/og';
+import sharp from 'sharp';
+
+function formatPrice(value: number): string {
+  return value.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// O Satori (motor de renderização do next/og) não decodifica imagens WebP —
+// fotos de produto (ex.: Mercado Livre) costumam vir nesse formato e são
+// silenciosamente omitidas do PNG final. Buscamos a imagem e convertemos
+// para PNG antes de passar pro Satori.
+async function toRenderablePng(imageUrl: string): Promise<string> {
+  const response = await fetch(imageUrl);
+  const arrayBuffer = await response.arrayBuffer();
+  const pngBuffer = await sharp(Buffer.from(arrayBuffer)).png().toBuffer();
+  return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+}
+
+export async function GET(request: Request): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+  const imageUrl = searchParams.get('imageUrl');
+  const title = searchParams.get('title');
+  const priceParam = searchParams.get('price');
+  const discountedPriceParam = searchParams.get('discountedPrice');
+  const coupon = searchParams.get('coupon');
+
+  if (!imageUrl || !title || !priceParam) {
+    return Response.json(
+      { erro: 'Parâmetros obrigatórios ausentes: imageUrl, title, price' },
+      { status: 400 },
+    );
+  }
+
+  const price = Number(priceParam);
+  const discountedPrice = discountedPriceParam ? Number(discountedPriceParam) : undefined;
+  const productImage = await toRenderablePng(imageUrl);
+
+  return new ImageResponse(
+    (
+      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
+        <img
+          src={productImage}
+          width={1080}
+          height={1920}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            position: 'absolute',
+            display: 'flex',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))',
+            padding: '40px 32px 56px',
+          }}
+        >
+          <div style={{ display: 'flex', color: 'white', fontSize: 34, fontWeight: 700 }}>
+            {title}
+          </div>
+          {typeof discountedPrice === 'number' ? (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  color: 'rgba(255,255,255,0.75)',
+                  fontSize: 26,
+                  textDecoration: 'line-through',
+                  marginTop: 8,
+                }}
+              >
+                De R${formatPrice(price)}
+              </div>
+              <div style={{ display: 'flex', color: '#ffe14d', fontSize: 52, fontWeight: 700 }}>
+                R${formatPrice(discountedPrice)}
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                color: '#ffe14d',
+                fontSize: 52,
+                fontWeight: 700,
+                marginTop: 8,
+              }}
+            >
+              R${formatPrice(price)}
+            </div>
+          )}
+          {coupon ? (
+            <div
+              style={{
+                display: 'flex',
+                color: 'white',
+                fontSize: 26,
+                background: '#ff3b5c',
+                padding: '6px 20px',
+                borderRadius: 999,
+                marginTop: 12,
+                alignSelf: 'flex-start',
+              }}
+            >
+              🎟️ {coupon}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    ),
+    { width: 1080, height: 1920 },
+  );
+}
