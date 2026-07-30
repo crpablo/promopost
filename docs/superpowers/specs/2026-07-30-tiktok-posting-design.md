@@ -25,21 +25,23 @@ O projeto já publica cada promoção capturada no Telegram no blog Shopify, no 
 
 **Auditoria da TikTok:** a API exige que o app passe por um processo de auditoria antes de permitir posts públicos — até lá, todo post sai como `privacy_level: SELF_ONLY` (visível só pra própria conta). Isso é uma restrição da plataforma, não uma escolha do projeto. A decisão tomada é **construir a integração completa e submeter pra auditoria assim que possível**, em vez de esperar a aprovação pra começar — assim o tempo de espera da TikTok corre em paralelo ao desenvolvimento e validação, não depois.
 
-**Verificação de domínio:** a TikTok exige verificar a propriedade do domínio de onde as imagens são buscadas antes de aceitar URLs desse domínio — um passo de configuração único (documentado na seção de setup do runbook, análogo à verificação de domínio do Google Search Console).
+**Verificação de domínio:** a TikTok exige verificar a propriedade do domínio de onde as imagens são buscadas antes de aceitar URLs desse domínio (`PULL_FROM_URL`) — um passo de configuração único (documentado na seção de setup do runbook, análogo à verificação de domínio do Google Search Console). **Isso descarta usar `product.imageUrl` diretamente**: essa URL aponta pro CDN do Mercado Livre (`mlstatic.com`), um domínio que não é nosso e que não podemos verificar. Por isso a foto é servida através de uma rota própria (`/api/tiktok-image-proxy`, no nosso domínio já verificável) que busca a imagem do Mercado Livre e a repassa — o mesmo princípio já usado por `/api/story-image` pra Stories, só que aqui devolvendo a imagem original sem overlay (a TikTok não aceita nem se beneficia do frame de Story).
 
 ## Arquitetura
 
 ```
 POST /api/webhook (já existente, estendido)
   → pipeline + Shopify + Facebook + Instagram feed + Instagram Story (inalterados)
-  → postToTikTok(product.imageUrl, title, description) — best-effort
+  → postToTikTok(proxiedImageUrl, title, description) — best-effort
+      → proxiedImageUrl = `${WEBHOOK_BASE_URL}/api/tiktok-image-proxy?imageUrl=${product.imageUrl}`
+        (domínio próprio, verificável pela TikTok — ver seção "Verificação de domínio")
       → carrega token salvo no Vercel Blob
       → se o access token estiver perto de expirar, renova com o refresh
         token (POST /v2/oauth/token/), salva o novo par de volta no Blob
       → POST /v2/post/publish/content/init/
           body: { post_info: { title, description, privacy_level },
                    source_info: { source: "PULL_FROM_URL",
-                                   photo_images: [product.imageUrl],
+                                   photo_images: [proxiedImageUrl],
                                    photo_cover_index: 0 },
                    media_type: "PHOTO", post_mode: "DIRECT_POST" }
   → resposta: { postUrl, facebook, instagram, story, tiktok: {ok, error?} }
@@ -50,9 +52,10 @@ POST /api/webhook (já existente, estendido)
 | Componente | Responsabilidade | Depende de |
 |---|---|---|
 | **TikTok Token Store** (`src/lib/social/tiktokTokenStore.ts`) | `loadTikTokToken(): Promise<{accessToken, refreshToken, expiresAt}>` e `saveTikTokToken(tokens): Promise<void>`, lendo/gravando no Vercel Blob. Espelha o padrão já usado pra sessão do Mercado Livre e do Telegram. | Vercel Blob |
-| **TikTok Bootstrap** (`scripts/bootstrap-tiktok-token.mjs`, local, manual) | Login único via OAuth: abre a URL de autorização da TikTok, você loga com a conta secundária/comercial e autoriza, o script troca o código de autorização pelo primeiro par de tokens e salva no Blob. Roda uma vez; de novo só se o refresh token expirar ou for revogado. | TikTok OAuth |
+| **TikTok Image Proxy** (`src/app/api/tiktok-image-proxy/route.ts`) | `GET ?imageUrl=...` — busca a imagem original do produto (`mlstatic.com`) e repassa como está, servida a partir do nosso próprio domínio (verificável pela TikTok). Sem overlay, diferente do `/api/story-image`. | — |
+| **TikTok OAuth callback** (`src/app/api/tiktok-oauth-callback/route.ts`) | `GET` — recebe o redirect do OAuth da TikTok (login único, manual, no navegador), troca o código pelo primeiro par de tokens, salva via Token Store. Roda uma vez; de novo só se o refresh token expirar ou for revogado. | TikTok Token Store, TikTok OAuth |
 | **TikTok Publisher** (`src/lib/social/tiktok.ts`) | `postToTikTok(imageUrl: string, title: string, description: string): Promise<SocialPostResult>` — renova o token se necessário (via Token Store), depois chama a Content Posting API com `media_type: PHOTO`. | TikTok Token Store, Content Posting API |
-| **Webhook** (`route.ts`, estendido) | Depois dos outros posts sociais, monta título (produto, truncado em 90 caracteres — limite da API) e descrição (mesmo formato de/por + cupom + link + hashtags das outras redes), chama `postToTikTok`, inclui `tiktok: {ok, error?}` na resposta. | TikTok Publisher |
+| **Webhook** (`route.ts`, estendido) | Depois dos outros posts sociais, monta título (produto, truncado em 90 caracteres — limite da API), descrição (mesmo formato de/por + cupom + link + hashtags das outras redes) e a URL proxiada da imagem, chama `postToTikTok`, inclui `tiktok: {ok, error?}` na resposta. | TikTok Publisher, TikTok Image Proxy |
 
 ## Tratamento de erro
 
@@ -61,14 +64,14 @@ POST /api/webhook (já existente, estendido)
 
 ## Testagem
 
-- Testes unitários pro `tiktokTokenStore` (mock do Vercel Blob) e pro `TikTok Publisher` (mock de fetch), cobrindo: postar com token válido sem precisar renovar, renovar automaticamente um token perto de expirar antes de postar, falha na renovação, falha ao postar.
+- Testes unitários pro `tiktokTokenStore` (mock do Vercel Blob), pro `TikTok Image Proxy` (mock de fetch) e pro `TikTok Publisher` (mock de fetch), cobrindo: postar com token válido sem precisar renovar, renovar automaticamente um token perto de expirar antes de postar, falha na renovação, falha ao postar, proxy repassando a imagem corretamente e propagando falha de busca.
 - Validação manual final: rodar o bootstrap com a conta real, configurar as variáveis de ambiente, disparar o webhook com um produto real, conferir `tiktok: {ok:true}` na resposta e ver o post (privado, até a auditoria da TikTok aprovar) na conta.
 
 ## Riscos conhecidos
 
 - **Posts ficam privados até a TikTok aprovar o app** — sem previsão de prazo. O valor real da integração só aparece depois da aprovação; até lá, serve pra validar que o pipeline técnico funciona.
 - **Token de renovação expira em 365 dias** — se o projeto ficar muito tempo sem postar nada no TikTok (improvável, dado o volume do canal), pode expirar sem perceber, exigindo bootstrap manual de novo.
-- **Verificação de domínio é um pré-requisito não testado ainda** — o processo exato (arquivo de verificação, registro DNS, etc.) só será confirmado na prática durante a configuração.
+- **Verificação de domínio é um pré-requisito não testado ainda** — o processo exato (arquivo de verificação, registro DNS, etc.) só será confirmado na prática durante a configuração. O domínio a verificar é o nosso próprio (que hospeda o `/api/tiktok-image-proxy`), não o do Mercado Livre — ver seção "Verificação de domínio" acima.
 - **Título limitado a 90 caracteres** — nomes de produto do Mercado Livre costumam ser longos; truncar pode cortar informação relevante. A descrição (4000 caracteres) tem espaço de sobra pro resto.
 
 ## Próximos passos (fora deste documento)
