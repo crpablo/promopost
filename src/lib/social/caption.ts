@@ -15,7 +15,7 @@ export function buildSocialCaption(
   coupon?: string,
   discountedPrice?: number,
 ): string {
-  const linkLine = `🔗 Confira: ${affiliateLink}`;
+  const linkLine = `🔗 Confira: ${affiliateLink} (também no link da bio)`;
 
   if (typeof discountedPrice === 'number') {
     const regularPrice = formatPrice(product.price);
