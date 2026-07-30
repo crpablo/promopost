@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+
 const ALLOWED_IMAGE_HOSTS = [/(^|\.)mlstatic\.com$/i];
 
 function isAllowedImageHost(url: string): boolean {
@@ -28,7 +30,24 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
-  const body = await upstream.arrayBuffer();
-  const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
-  return new Response(body, { status: 200, headers: { 'content-type': contentType } });
+  // Normaliza sempre pra JPEG: fotos de produto do Mercado Livre costumam vir
+  // em WebP (ver comentário equivalente em story-image/route.tsx, baseado em
+  // teste real) e não sabemos se a TikTok aceita WebP em PULL_FROM_URL. Não
+  // redimensiona nem compõe overlay — só decodifica e reencoda, preservando
+  // a resolução original (a TikTok já lida com isso).
+  const arrayBuffer = await upstream.arrayBuffer();
+  let jpegBuffer: Buffer;
+  try {
+    jpegBuffer = await sharp(Buffer.from(arrayBuffer)).jpeg({ quality: 90 }).toBuffer();
+  } catch (err) {
+    return Response.json(
+      { erro: `Falha ao normalizar a imagem para JPEG: ${(err as Error).message}` },
+      { status: 502 },
+    );
+  }
+
+  return new Response(new Uint8Array(jpegBuffer), {
+    status: 200,
+    headers: { 'content-type': 'image/jpeg' },
+  });
 }

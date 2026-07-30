@@ -1,5 +1,10 @@
 import type { SocialPostResult } from './facebook';
-import { loadTikTokTokens, saveTikTokTokens, type TikTokTokens } from './tiktokTokenStore';
+import {
+  exchangeTikTokToken,
+  loadTikTokTokens,
+  saveTikTokTokens,
+  type TikTokTokens,
+} from './tiktokTokenStore';
 
 // Renova o token se faltar menos de 5min pra expirar — margem de segurança
 // contra o tempo que a chamada de postagem em si pode levar.
@@ -8,32 +13,12 @@ const STATUS_POLL_INTERVAL_MS = 2000;
 const STATUS_POLL_MAX_ATTEMPTS = 10;
 
 async function refreshAccessToken(refreshToken: string): Promise<TikTokTokens> {
-  const clientKey = process.env.TIKTOK_CLIENT_KEY;
-  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-  if (!clientKey || !clientSecret) {
-    throw new Error('Variáveis de ambiente do TikTok ausentes: TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET');
+  let tokens: TikTokTokens;
+  try {
+    tokens = await exchangeTikTokToken({ grant_type: 'refresh_token', refresh_token: refreshToken });
+  } catch (err) {
+    throw new Error(`Falha ao renovar token do TikTok: ${(err as Error).message}`);
   }
-
-  const res = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_key: clientKey,
-      client_secret: clientSecret,
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-    }),
-  });
-  const json = await res.json();
-  if (!res.ok || !json.access_token) {
-    throw new Error(`Falha ao renovar token do TikTok: ${json.error_description ?? res.status}`);
-  }
-
-  const tokens: TikTokTokens = {
-    accessToken: json.access_token,
-    refreshToken: json.refresh_token,
-    expiresAt: Date.now() + json.expires_in * 1000,
-  };
   await saveTikTokTokens(tokens);
   return tokens;
 }
@@ -64,11 +49,14 @@ async function waitForPublishComplete(publishId: string, accessToken: string): P
     if (!res.ok || json.error?.code !== 'ok') {
       throw new Error(`Falha ao checar status da publicação no TikTok: ${json.error?.message ?? res.status}`);
     }
-    if (json.data.status === 'PUBLISH_COMPLETE') {
+    if (!json.data) {
+      throw new Error('Resposta inesperada da TikTok ao checar status da publicação');
+    }
+    if (json.data?.status === 'PUBLISH_COMPLETE') {
       return;
     }
-    if (json.data.status === 'FAILED') {
-      throw new Error(`Falha ao publicar no TikTok: ${json.data.fail_reason ?? 'motivo desconhecido'}`);
+    if (json.data?.status === 'FAILED') {
+      throw new Error(`Falha ao publicar no TikTok: ${json.data?.fail_reason ?? 'motivo desconhecido'}`);
     }
     await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_INTERVAL_MS));
   }

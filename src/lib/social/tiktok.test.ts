@@ -5,10 +5,16 @@ const { loadTikTokTokensMock, saveTikTokTokensMock } = vi.hoisted(() => ({
   saveTikTokTokensMock: vi.fn(),
 }));
 
-vi.mock('./tiktokTokenStore', () => ({
-  loadTikTokTokens: loadTikTokTokensMock,
-  saveTikTokTokens: saveTikTokTokensMock,
-}));
+// Mock parcial: mantém exchangeTikTokToken real (usa o fetch stub de cada
+// teste) e só substitui load/save, que é o que os testes precisam controlar.
+vi.mock('./tiktokTokenStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./tiktokTokenStore')>();
+  return {
+    ...actual,
+    loadTikTokTokens: loadTikTokTokensMock,
+    saveTikTokTokens: saveTikTokTokensMock,
+  };
+});
 
 import { postToTikTok } from './tiktok';
 
@@ -199,6 +205,47 @@ describe('postToTikTok', () => {
 
     await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
       'Variáveis de ambiente do TikTok ausentes',
+    );
+  });
+
+  it('lança erro e não salva quando a renovação retorna 200 sem refresh_token (evita corromper o token store)', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'old-access-token',
+      refreshToken: 'old-refresh-token',
+      expiresAt: Date.now() + 60 * 1000, // perto de expirar — força renovação
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'new-access-token', expires_in: 86400 }), // sem refresh_token
+      }),
+    );
+
+    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
+      'Falha ao renovar token do TikTok',
+    );
+    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+  });
+
+  it('lança erro em português quando o polling de status responde sem o campo data', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ error: { code: 'ok' } }), // sem data
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
+      'Resposta inesperada da TikTok ao checar status da publicação',
     );
   });
 });

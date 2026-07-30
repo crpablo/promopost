@@ -1,8 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { saveTikTokTokensMock } = vi.hoisted(() => ({ saveTikTokTokensMock: vi.fn() }));
+const { loadTikTokTokensMock, saveTikTokTokensMock } = vi.hoisted(() => ({
+  loadTikTokTokensMock: vi.fn(),
+  saveTikTokTokensMock: vi.fn(),
+}));
 
-vi.mock('@/lib/social/tiktokTokenStore', () => ({ saveTikTokTokens: saveTikTokTokensMock }));
+// Mock parcial: mantém exchangeTikTokToken real (usa o fetch stub de cada
+// teste) e só substitui load/save, que é o que os testes precisam controlar.
+vi.mock('@/lib/social/tiktokTokenStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/social/tiktokTokenStore')>();
+  return {
+    ...actual,
+    loadTikTokTokens: loadTikTokTokensMock,
+    saveTikTokTokens: saveTikTokTokensMock,
+  };
+});
 
 import { GET } from './route';
 
@@ -21,6 +33,7 @@ describe('GET /api/tiktok-oauth-callback', () => {
 
   it('troca o código pelo token e salva, retornando sucesso', async () => {
     stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(null); // sem token salvo ainda — permite a troca
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -63,6 +76,7 @@ describe('GET /api/tiktok-oauth-callback', () => {
 
   it('retorna 500 quando a troca de código por token falha', async () => {
     stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(null);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -75,6 +89,44 @@ describe('GET /api/tiktok-oauth-callback', () => {
     const response = await GET(request);
 
     expect(response.status).toBe(500);
+    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+  });
+
+  it('retorna 500 quando a resposta da TikTok vem 200 mas sem refresh_token (evita corromper o token store)', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(null);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'act123', expires_in: 86400 }), // sem refresh_token
+      }),
+    );
+
+    const request = new Request('https://promopost.example.com/api/tiktok-oauth-callback?code=abc123');
+    const response = await GET(request);
+
+    expect(response.status).toBe(500);
+    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+  });
+
+  it('retorna 409 e não sobrescreve quando já existe uma conta autorizada', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'existing-access-token',
+      refreshToken: 'existing-refresh-token',
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new Request('https://promopost.example.com/api/tiktok-oauth-callback?code=abc123');
+    const response = await GET(request);
+    const body = await response.text();
+
+    expect(response.status).toBe(409);
+    expect(body).toContain('Já existe uma conta do TikTok autorizada');
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(saveTikTokTokensMock).not.toHaveBeenCalled();
   });
 });

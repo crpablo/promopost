@@ -67,7 +67,7 @@ curl -X POST https://<seu-dominio>.vercel.app/api/webhook \
   -d '{"link":"https://produto.mercadolivre.com.br/MLB-1234567890-produto-exemplo-_JM"}'
 ```
 
-Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "postUrl": "...", "facebook": {...}, "instagram": {...} }` — os campos `facebook`/`instagram` vêm como `{ "ok": false, "error": "não configurado" }` se as variáveis da Meta (seção 10) ainda não estiverem configuradas. Ver seção 10.3 pro formato completo.
+Use um link de produto real do Mercado Livre. Esperado: resposta `200` com `{ "postUrl": "...", "facebook": {...}, "instagram": {...}, "tiktok": {...} }` — os campos `facebook`/`instagram`/`tiktok` vêm como `{ "ok": false, "error": "não configurado" }` se as respectivas variáveis (seções 10 e 11) ainda não estiverem configuradas. Ver seção 10.3 pro formato completo.
 
 ## 7. Conferir o resultado
 
@@ -162,7 +162,12 @@ Configure `META_PAGE_ID` e `META_IG_BUSINESS_ACCOUNT_ID` na Vercel com os valore
 Depois do deploy, disparar o webhook normalmente (seção 6) com um link real do Mercado Livre e conferir na resposta os campos `facebook`/`instagram`:
 
 ```json
-{ "postUrl": "...", "facebook": { "ok": true, "postId": "..." }, "instagram": { "ok": true, "postId": "..." } }
+{
+  "postUrl": "...",
+  "facebook": { "ok": true, "postId": "..." },
+  "instagram": { "ok": true, "postId": "..." },
+  "tiktok": { "ok": true, "postId": "..." }
+}
 ```
 
 Conferir também que o post apareceu de fato na Página do Facebook e no perfil do Instagram, com a imagem do produto e a legenda com preço/cupom/link/hashtags.
@@ -183,7 +188,13 @@ O mesmo gatilho do feed também posta um Story (imagem do produto + preço/cupom
 A resposta do webhook ganha um terceiro campo, `story`, no mesmo formato de `facebook`/`instagram`:
 
 ```json
-{ "postUrl": "...", "facebook": {...}, "instagram": {...}, "story": { "ok": true, "postId": "..." } }
+{
+  "postUrl": "...",
+  "facebook": {...},
+  "instagram": {...},
+  "story": { "ok": true, "postId": "..." },
+  "tiktok": { "ok": true, "postId": "..." }
+}
 ```
 
 Pra conferir o resultado visual da imagem gerada antes de postar de verdade, abra direto no navegador: `https://promopost.vercel.app/api/story-image?imageUrl=<url da foto>&title=<nome>&price=<preço>&discountedPrice=<preço com desconto, opcional>&coupon=<cupom, opcional>` (parâmetros de query com URL-encoding).
@@ -207,6 +218,8 @@ Cobre a postagem automática da mesma promoção como foto no TikTok, junto com 
 
 ### 11.2 Autorizar a conta
 
+**Nota sobre a ordem de configuração:** assim que `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET` estiverem configurados (o que já ativa o gate do TikTok no webhook), toda postagem vai reportar `tiktok: {ok:false, error:'Token do TikTok não configurado...'}` até você completar a autorização manual abaixo — isso é esperado, não um bug; o token só existe depois desse passo.
+
 Depois de configurar `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` e `TIKTOK_REDIRECT_URI` na Vercel e fazer o deploy, monte e abra esta URL no navegador (troque `<client_key>` e `<redirect_uri codificado>`):
 
 ```
@@ -216,6 +229,8 @@ https://www.tiktok.com/v2/auth/authorize/?client_key=<client_key>&response_type=
 Loga com a **conta secundária/comercial dedicada** (mesmo princípio do Telegram/Meta — não a conta pessoal principal) e autoriza. Você é redirecionado pra `/api/tiktok-oauth-callback`, que troca o código pelo primeiro par de tokens e salva no Blob automaticamente — a página mostra "Conta do TikTok autorizada com sucesso!" quando funciona. Não precisa rodar nenhum script local.
 
 O token de acesso renova sozinho (o publisher renova antes de cada postagem se estiver perto de expirar). Só repita esse passo se o token de renovação expirar (365 dias) ou for revogado manualmente.
+
+**Proteção contra re-autorização indevida:** como o `TIKTOK_CLIENT_KEY` aparece na própria URL de autorização (não é secreto), a rota `/api/tiktok-oauth-callback` recusa trocar um novo código se já existir um token salvo — devolve `409` com a mensagem "Já existe uma conta do TikTok autorizada...". Isso evita que alguém monte a própria URL, autorize com a conta dele, e sobrescreva o token legítimo. Se precisar mesmo reautorizar (token de renovação expirado/revogado, ou trocar de conta), apague manualmente o blob `tiktok-tokens.json` no Vercel Blob Store antes de repetir este passo.
 
 ### 11.3 Submeter o app pra auditoria
 

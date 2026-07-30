@@ -1,4 +1,4 @@
-import { saveTikTokTokens } from '@/lib/social/tiktokTokenStore';
+import { exchangeTikTokToken, loadTikTokTokens, saveTikTokTokens } from '@/lib/social/tiktokTokenStore';
 
 export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
@@ -12,37 +12,33 @@ export async function GET(request: Request): Promise<Response> {
     return new Response('Parâmetro code ausente', { status: 400 });
   }
 
-  const clientKey = process.env.TIKTOK_CLIENT_KEY;
-  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
   const redirectUri = process.env.TIKTOK_REDIRECT_URI;
-  if (!clientKey || !clientSecret || !redirectUri) {
+  if (!process.env.TIKTOK_CLIENT_KEY || !process.env.TIKTOK_CLIENT_SECRET || !redirectUri) {
     return new Response('Variáveis de ambiente do TikTok ausentes no servidor', { status: 500 });
   }
 
-  const res = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_key: clientKey,
-      client_secret: clientSecret,
-      code,
-      grant_type: 'authorization_code',
-      redirect_uri: redirectUri,
-    }),
-  });
-  const json = await res.json();
-  if (!res.ok || !json.access_token) {
+  // Defesa contra re-autorização indevida: o token store é single-copy — se
+  // alguém montar a própria URL de autorização com o nosso TIKTOK_CLIENT_KEY
+  // (que aparece na URL, não é secreto) e mandar o code pra cá, sobrescreve
+  // os tokens legítimos pelos dele. Depois da primeira autorização (feita
+  // pelo operador), essa rota fica bloqueada até um operador com acesso ao
+  // Blob apagar o token deliberadamente pra reautorizar com outra conta.
+  const existingTokens = await loadTikTokTokens();
+  if (existingTokens) {
     return new Response(
-      `Falha ao trocar código por token: ${json.error_description ?? res.status}`,
-      { status: 500 },
+      'Já existe uma conta do TikTok autorizada. Para reautorizar com outra conta, apague o token salvo manualmente antes de repetir este passo.',
+      { status: 409 },
     );
   }
 
-  await saveTikTokTokens({
-    accessToken: json.access_token,
-    refreshToken: json.refresh_token,
-    expiresAt: Date.now() + json.expires_in * 1000,
-  });
+  let tokens;
+  try {
+    tokens = await exchangeTikTokToken({ grant_type: 'authorization_code', code, redirect_uri: redirectUri });
+  } catch (err) {
+    return new Response(`Falha ao trocar código por token: ${(err as Error).message}`, { status: 500 });
+  }
+
+  await saveTikTokTokens(tokens);
 
   return new Response('Conta do TikTok autorizada com sucesso! Pode fechar esta aba.', {
     status: 200,
