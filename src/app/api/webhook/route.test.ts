@@ -204,6 +204,42 @@ describe('POST /api/webhook', () => {
     expect(postToTikTok).not.toHaveBeenCalled();
   });
 
+  it('retorna 200 com Meta e TikTok configurados simultaneamente quando montar a legenda social falha — facebook, instagram e tiktok propagam o erro, Story é tentado normalmente', async () => {
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    stubTikTokEnv();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: PRODUCT,
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockImplementation(() => {
+      throw new Error('produto malformado');
+    });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      facebook: { ok: false, error: 'produto malformado' },
+      instagram: { ok: false, error: 'produto malformado' },
+      story: { ok: true, postId: 'story-1' },
+      tiktok: { ok: false, error: 'produto malformado' },
+    });
+    expect(postToFacebook).not.toHaveBeenCalled();
+    expect(postToInstagram).not.toHaveBeenCalled();
+    expect(postToTikTok).not.toHaveBeenCalled();
+    expect(postStoryToInstagram).toHaveBeenCalledTimes(1);
+  });
+
   it('retorna story com erro quando WEBHOOK_BASE_URL não está configurado, sem afetar Facebook/Instagram', async () => {
     stubMetaEnv();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
