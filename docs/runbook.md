@@ -189,3 +189,53 @@ A resposta do webhook ganha um terceiro campo, `story`, no mesmo formato de `fac
 Pra conferir o resultado visual da imagem gerada antes de postar de verdade, abra direto no navegador: `https://promopost.vercel.app/api/story-image?imageUrl=<url da foto>&title=<nome>&price=<preço>&discountedPrice=<preço com desconto, opcional>&coupon=<cupom, opcional>` (parâmetros de query com URL-encoding).
 
 Se `story` vier com erro: mesma tabela de causas prováveis da seção 10.4 (token/permissão, imagem inacessível) — mais um caso específico do Story: `WEBHOOK_BASE_URL não configurado` significa que essa variável (usada aqui pra montar a URL pública da imagem) está faltando.
+
+## 11. TikTok (opcional, sub-projeto separado)
+
+Cobre a postagem automática da mesma promoção como foto no TikTok, junto com o post do blog e das outras redes (ver `docs/superpowers/specs/2026-07-30-tiktok-posting-design.md`).
+
+**Importante:** até o app passar pela auditoria da TikTok (seção 11.3), todo post sai como privado (`SELF_ONLY`) — só visível na própria conta. Isso é uma restrição da plataforma, não um bug.
+
+### 11.1 Criar o app na TikTok
+
+1. Acesse developers.tiktok.com, crie um app.
+2. Adicione o produto "Content Posting API".
+3. Anote o **Client Key** e o **Client Secret** — vão em `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`.
+4. Registre a URL de callback (`https://promopost.vercel.app/api/tiktok-oauth-callback`) como Redirect URI autorizada do app — vai em `TIKTOK_REDIRECT_URI`.
+5. Configure a permissão (`scope`) `video.publish`.
+6. **Verifique o nosso próprio domínio.** A TikTok só aceita `photo_images` (`PULL_FROM_URL`) de domínios verificados como propriedade sua — mesmo princípio do Google Search Console. Como as fotos de produto vêm originalmente do CDN do Mercado Livre (`mlstatic.com`, que não é nosso e não pode ser verificado), a foto é servida através da nossa própria rota `/api/tiktok-image-proxy` — é o **nosso** domínio (`promopost.vercel.app`, ou o domínio customizado do projeto, se houver) que precisa ser verificado, não o do Mercado Livre. Na área "Content Posting API" > "Domain Verification" do seu app, adicione esse domínio e siga o método de verificação que a TikTok oferecer no momento (arquivo em `/.well-known/` ou registro TXT no DNS — a interface deles muda; siga o passo a passo que aparecer). Sem isso, o `postToTikTok` falha com um erro de URL de imagem não permitida mesmo com tudo o mais configurado corretamente.
+
+### 11.2 Autorizar a conta
+
+Depois de configurar `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` e `TIKTOK_REDIRECT_URI` na Vercel e fazer o deploy, monte e abra esta URL no navegador (troque `<client_key>` e `<redirect_uri codificado>`):
+
+```
+https://www.tiktok.com/v2/auth/authorize/?client_key=<client_key>&response_type=code&scope=video.publish&redirect_uri=<redirect_uri codificado>&state=promopost
+```
+
+Loga com a **conta secundária/comercial dedicada** (mesmo princípio do Telegram/Meta — não a conta pessoal principal) e autoriza. Você é redirecionado pra `/api/tiktok-oauth-callback`, que troca o código pelo primeiro par de tokens e salva no Blob automaticamente — a página mostra "Conta do TikTok autorizada com sucesso!" quando funciona. Não precisa rodar nenhum script local.
+
+O token de acesso renova sozinho (o publisher renova antes de cada postagem se estiver perto de expirar). Só repita esse passo se o token de renovação expirar (365 dias) ou for revogado manualmente.
+
+### 11.3 Submeter o app pra auditoria
+
+Na área "Content Posting API" do seu app no developers.tiktok.com, envie o app pra revisão quando quiser que os posts deixem de ser privados. Não é bloqueante pra usar a integração (os posts saem privados até lá) — pode submeter a qualquer momento, inclusive antes de configurar o resto.
+
+### 11.4 Teste manual
+
+Depois de autorizado (seção 11.2), disparar o webhook normalmente (seção 6) com um produto real e conferir o campo `tiktok` na resposta:
+
+```json
+{ "tiktok": { "ok": true, "postId": "..." } }
+```
+
+Conferir na conta do TikTok (o post vai estar privado, visível só logado nela).
+
+### 11.5 Se algo falhar
+
+- `tiktok: {ok:false, error:'não configurado'}` — faltam `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`.
+- `Token do TikTok não configurado` — nunca rodou o passo 11.2, ou o token de renovação expirou/foi revogado; repita o passo 11.2.
+- `Falha ao renovar token do TikTok` — mesma causa acima.
+- `Falha ao publicar no TikTok: picture_size_check_failed` (ou outro `fail_reason`) — a imagem do produto não passou nas checagens da TikTok; confira se a URL da imagem abre normalmente.
+- `tiktok: {ok:false, error:'WEBHOOK_BASE_URL não configurado'}` — falta a variável `WEBHOOK_BASE_URL` (mesma usada pela seção 10.5), necessária pra montar a URL do `/api/tiktok-image-proxy`.
+- Erro de URL de imagem não permitida vindo da própria TikTok — o domínio do passo 11.1.6 ainda não foi verificado (a verificação pode levar um tempo pra propagar depois de configurada).

@@ -7,15 +7,22 @@ import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
+import { postToTikTok } from '@/lib/social/tiktok';
 
 export const maxDuration = 300;
 
 type SocialResult = { ok: true; postId: string } | { ok: false; error: string };
 
+const NAO_CONFIGURADO: SocialResult = { ok: false, error: 'não configurado' };
+
 function isMetaConfigured(): boolean {
   return Boolean(
     process.env.META_PAGE_ID && process.env.META_IG_BUSINESS_ACCOUNT_ID && process.env.META_SYSTEM_USER_TOKEN,
   );
+}
+
+function isTikTokConfigured(): boolean {
+  return Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
 }
 
 function toErrorMessage(err: unknown): string {
@@ -41,56 +48,96 @@ function buildStoryImageUrl(product: Product, coupon?: string, discountedPrice?:
   return `${baseUrl}/api/story-image?${params.toString()}`;
 }
 
+function buildTikTokImageProxyUrl(product: Product): string {
+  const baseUrl = process.env.WEBHOOK_BASE_URL;
+  if (!baseUrl) {
+    throw new Error('WEBHOOK_BASE_URL não configurado');
+  }
+  const params = new URLSearchParams({ imageUrl: product.imageUrl });
+  return `${baseUrl}/api/tiktok-image-proxy?${params.toString()}`;
+}
+
 async function postToSocialNetworks(
   product: Product,
   affiliateLink: string,
   coupon?: string,
   discountedPrice?: number,
-): Promise<{ facebook: SocialResult; instagram: SocialResult; story: SocialResult }> {
-  if (!isMetaConfigured()) {
-    const naoConfigurado: SocialResult = { ok: false, error: 'não configurado' };
-    return { facebook: naoConfigurado, instagram: naoConfigurado, story: naoConfigurado };
-  }
-
-  // O Story não depende da legenda do feed — usa dados brutos do produto
-  // direto na URL da imagem, então começa em paralelo, independente do
-  // resultado de buildSocialCaption abaixo.
-  const storyResultPromise: Promise<SocialResult> = Promise.resolve()
-    .then(() => buildStoryImageUrl(product, coupon, discountedPrice))
-    .then((storyImageUrl) => postStoryToInstagram(storyImageUrl))
-    .then((r): SocialResult => ({ ok: true, postId: r.postId }))
-    .catch((err: unknown): SocialResult => {
+): Promise<{ facebook: SocialResult; instagram: SocialResult; story: SocialResult; tiktok: SocialResult }> {
+  // O Story usa dados brutos do produto, não a legenda — tem seu próprio
+  // gate (Meta) e roda totalmente independente do resto.
+  const storyResultPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) {
+      return NAO_CONFIGURADO;
+    }
+    try {
+      const storyImageUrl = buildStoryImageUrl(product, coupon, discountedPrice);
+      const r = await postStoryToInstagram(storyImageUrl);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
       console.error('Erro ao postar Story no Instagram:', err);
       return { ok: false, error: toErrorMessage(err) };
-    });
+    }
+  })();
 
-  let caption: string;
-  try {
-    caption = buildSocialCaption(product, affiliateLink, coupon, discountedPrice);
-  } catch (err) {
-    console.error('Erro ao montar legenda social:', err);
-    const erro: SocialResult = { ok: false, error: toErrorMessage(err) };
-    const story = await storyResultPromise;
-    return { facebook: erro, instagram: erro, story };
+  // Facebook, Instagram (feed) e TikTok reaproveitam a mesma legenda — só
+  // monta ela se pelo menos uma dessas três redes estiver configurada.
+  let caption: string | undefined;
+  let captionError: SocialResult | undefined;
+  if (isMetaConfigured() || isTikTokConfigured()) {
+    try {
+      caption = buildSocialCaption(product, affiliateLink, coupon, discountedPrice);
+    } catch (err) {
+      console.error('Erro ao montar legenda social:', err);
+      captionError = { ok: false, error: toErrorMessage(err) };
+    }
   }
 
-  const [facebook, instagram, story] = await Promise.all([
-    postToFacebook(product.imageUrl, caption)
-      .then((r): SocialResult => ({ ok: true, postId: r.postId }))
-      .catch((err: unknown): SocialResult => {
-        console.error('Erro ao postar no Facebook:', err);
-        return { ok: false, error: toErrorMessage(err) };
-      }),
-    postToInstagram(product.imageUrl, caption)
-      .then((r): SocialResult => ({ ok: true, postId: r.postId }))
-      .catch((err: unknown): SocialResult => {
-        console.error('Erro ao postar no Instagram:', err);
-        return { ok: false, error: toErrorMessage(err) };
-      }),
+  const facebookPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) return NAO_CONFIGURADO;
+    if (captionError) return captionError;
+    try {
+      const r = await postToFacebook(product.imageUrl, caption as string);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar no Facebook:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const instagramPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) return NAO_CONFIGURADO;
+    if (captionError) return captionError;
+    try {
+      const r = await postToInstagram(product.imageUrl, caption as string);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar no Instagram:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const tiktokPromise: Promise<SocialResult> = (async () => {
+    if (!isTikTokConfigured()) return NAO_CONFIGURADO;
+    if (captionError) return captionError;
+    try {
+      const proxiedImageUrl = buildTikTokImageProxyUrl(product);
+      const title = product.title.slice(0, 90);
+      const r = await postToTikTok(proxiedImageUrl, title, caption as string);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar no TikTok:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const [facebook, instagram, story, tiktok] = await Promise.all([
+    facebookPromise,
+    instagramPromise,
     storyResultPromise,
+    tiktokPromise,
   ]);
 
-  return { facebook, instagram, story };
+  return { facebook, instagram, story, tiktok };
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -129,14 +176,17 @@ export async function POST(request: Request): Promise<Response> {
       { coupon: body.coupon, discountedPrice: body.discountedPrice },
     );
 
-    const { facebook, instagram, story } = await postToSocialNetworks(
+    const { facebook, instagram, story, tiktok } = await postToSocialNetworks(
       result.product,
       result.affiliateLink,
       body.coupon,
       body.discountedPrice,
     );
 
-    return Response.json({ postUrl: result.postUrl, facebook, instagram, story }, { status: 200 });
+    return Response.json(
+      { postUrl: result.postUrl, facebook, instagram, story, tiktok },
+      { status: 200 },
+    );
   } catch (err) {
     console.error('Erro no pipeline PromoPost:', err);
     if (err instanceof PipelineError) {

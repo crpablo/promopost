@@ -7,6 +7,7 @@ vi.mock('@/lib/shopify/publisher', () => ({ publishArticle: vi.fn() }));
 vi.mock('@/lib/social/caption', () => ({ buildSocialCaption: vi.fn() }));
 vi.mock('@/lib/social/facebook', () => ({ postToFacebook: vi.fn() }));
 vi.mock('@/lib/social/instagram', () => ({ postToInstagram: vi.fn(), postStoryToInstagram: vi.fn() }));
+vi.mock('@/lib/social/tiktok', () => ({ postToTikTok: vi.fn() }));
 
 import { buildPostText } from '@/lib/content/template';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
@@ -16,6 +17,7 @@ import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
+import { postToTikTok } from '@/lib/social/tiktok';
 import { POST } from './route';
 
 function makeRequest(body: unknown, secret = 'correct-secret') {
@@ -36,6 +38,11 @@ function stubWebhookBaseUrl() {
   vi.stubEnv('WEBHOOK_BASE_URL', 'https://promopost.example.com');
 }
 
+function stubTikTokEnv() {
+  vi.stubEnv('TIKTOK_CLIENT_KEY', 'fake-tiktok-key');
+  vi.stubEnv('TIKTOK_CLIENT_SECRET', 'fake-tiktok-secret');
+}
+
 const PRODUCT = { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' };
 
 describe('POST /api/webhook', () => {
@@ -52,9 +59,10 @@ describe('POST /api/webhook', () => {
     expect(response.status).toBe(401);
   });
 
-  it('retorna 200 com a url do post no caminho feliz, e posta no Facebook, Instagram e Story', async () => {
+  it('retorna 200 com a url do post no caminho feliz, e posta no Facebook, Instagram, Story e TikTok', async () => {
     stubMetaEnv();
     stubWebhookBaseUrl();
+    stubTikTokEnv();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
     vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
@@ -69,6 +77,7 @@ describe('POST /api/webhook', () => {
     vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
     vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
     vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-1' });
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
@@ -79,22 +88,21 @@ describe('POST /api/webhook', () => {
       facebook: { ok: true, postId: 'fb-1' },
       instagram: { ok: true, postId: 'ig-1' },
       story: { ok: true, postId: 'story-1' },
+      tiktok: { ok: true, postId: 'tt-1' },
     });
     expect(postToFacebook).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
     expect(postToInstagram).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
-
-    expect(postStoryToInstagram).toHaveBeenCalledTimes(1);
-    const [storyImageUrl] = vi.mocked(postStoryToInstagram).mock.calls[0];
-    expect(storyImageUrl.startsWith('https://promopost.example.com/api/story-image?')).toBe(true);
-    const params = new URL(storyImageUrl).searchParams;
-    expect(params.get('imageUrl')).toBe('https://x.com/img.jpg');
-    expect(params.get('title')).toBe('Produto X');
-    expect(params.get('price')).toBe('99.9');
+    expect(postToTikTok).toHaveBeenCalledWith(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
+      'Produto X',
+      'legenda social',
+    );
   });
 
-  it('retorna postUrl mesmo quando Facebook, Instagram e Story falham (best-effort, não derruba o blog)', async () => {
+  it('retorna postUrl mesmo quando Facebook, Instagram, Story e TikTok falham (best-effort, não derruba o blog)', async () => {
     stubMetaEnv();
     stubWebhookBaseUrl();
+    stubTikTokEnv();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
     vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
@@ -109,6 +117,7 @@ describe('POST /api/webhook', () => {
     vi.mocked(postToFacebook).mockRejectedValue(new Error('Token inválido'));
     vi.mocked(postToInstagram).mockRejectedValue(new Error('Imagem inválida'));
     vi.mocked(postStoryToInstagram).mockRejectedValue(new Error('Story indisponível'));
+    vi.mocked(postToTikTok).mockRejectedValue(new Error('Token do TikTok expirado'));
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
@@ -119,6 +128,7 @@ describe('POST /api/webhook', () => {
       facebook: { ok: false, error: 'Token inválido' },
       instagram: { ok: false, error: 'Imagem inválida' },
       story: { ok: false, error: 'Story indisponível' },
+      tiktok: { ok: false, error: 'Token do TikTok expirado' },
     });
   });
 
@@ -146,6 +156,7 @@ describe('POST /api/webhook', () => {
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
     expect(postStoryToInstagram).not.toHaveBeenCalled();
+    expect(postToTikTok).not.toHaveBeenCalled();
   });
 
   it('retorna 400 com erro missing_link quando o body é null', async () => {
@@ -185,10 +196,12 @@ describe('POST /api/webhook', () => {
       facebook: { ok: false, error: 'produto malformado' },
       instagram: { ok: false, error: 'produto malformado' },
       story: { ok: true, postId: 'story-1' },
+      tiktok: { ok: false, error: 'não configurado' },
     });
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
     expect(postStoryToInstagram).toHaveBeenCalledTimes(1);
+    expect(postToTikTok).not.toHaveBeenCalled();
   });
 
   it('retorna story com erro quando WEBHOOK_BASE_URL não está configurado, sem afetar Facebook/Instagram', async () => {
@@ -216,11 +229,14 @@ describe('POST /api/webhook', () => {
       facebook: { ok: true, postId: 'fb-1' },
       instagram: { ok: true, postId: 'ig-1' },
       story: { ok: false, error: 'WEBHOOK_BASE_URL não configurado' },
+      tiktok: { ok: false, error: 'não configurado' },
     });
     expect(postStoryToInstagram).not.toHaveBeenCalled();
   });
 
-  it('pula Facebook, Instagram e Story quando as variáveis da Meta não estão configuradas', async () => {
+  it('pula Facebook, Instagram e Story quando as variáveis da Meta não estão configuradas, mas ainda tenta o TikTok se ele estiver configurado', async () => {
+    stubTikTokEnv();
+    stubWebhookBaseUrl();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
     vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
@@ -231,6 +247,8 @@ describe('POST /api/webhook', () => {
     vi.mocked(publishArticle).mockResolvedValue({
       url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
     });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-1' });
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
@@ -241,11 +259,88 @@ describe('POST /api/webhook', () => {
       facebook: { ok: false, error: 'não configurado' },
       instagram: { ok: false, error: 'não configurado' },
       story: { ok: false, error: 'não configurado' },
+      tiktok: { ok: true, postId: 'tt-1' },
     });
-    expect(buildSocialCaption).not.toHaveBeenCalled();
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
     expect(postStoryToInstagram).not.toHaveBeenCalled();
+    expect(postToTikTok).toHaveBeenCalledWith(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
+      'Produto X',
+      'legenda social',
+    );
+  });
+
+  it('reporta erro no TikTok quando WEBHOOK_BASE_URL não está configurado, mesmo com o TikTok configurado', async () => {
+    stubTikTokEnv();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: PRODUCT,
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.tiktok).toEqual({ ok: false, error: 'WEBHOOK_BASE_URL não configurado' });
+    expect(postToTikTok).not.toHaveBeenCalled();
+  });
+
+  it('pula o TikTok quando só ele não está configurado, mesmo com a Meta configurada', async () => {
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: PRODUCT,
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.tiktok).toEqual({ ok: false, error: 'não configurado' });
+    expect(postToTikTok).not.toHaveBeenCalled();
+  });
+
+  it('trunca o título do TikTok em 90 caracteres', async () => {
+    stubTikTokEnv();
+    stubWebhookBaseUrl();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    const longTitle = 'A'.repeat(120);
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: { title: longTitle, price: 99.9, imageUrl: 'https://x.com/img.jpg' },
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-1' });
+
+    await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+
+    const [, calledTitle] = vi.mocked(postToTikTok).mock.calls[0];
+    expect(calledTitle).toHaveLength(90);
+    expect(calledTitle).toBe('A'.repeat(90));
   });
 
   it('repassa coupon e discountedPrice do body pro runPipeline e pra URL da imagem do Story', async () => {
