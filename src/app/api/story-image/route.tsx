@@ -10,13 +10,14 @@ function formatPrice(value: number): string {
 
 // O Satori (motor de renderização do next/og) não decodifica imagens WebP —
 // fotos de produto (ex.: Mercado Livre) costumam vir nesse formato e são
-// silenciosamente omitidas do PNG final. Buscamos a imagem e convertemos
-// para PNG antes de passar pro Satori.
-async function toRenderablePng(imageUrl: string): Promise<string> {
+// silenciosamente omitidas da imagem final. Buscamos a imagem e convertemos
+// pro Satori conseguir renderizar. Usamos JPEG (não PNG) porque comprime
+// muito melhor que PNG pra foto, reduzindo o tamanho da resposta.
+async function toRenderableImage(imageUrl: string): Promise<string> {
   const response = await fetch(imageUrl);
   const arrayBuffer = await response.arrayBuffer();
-  const pngBuffer = await sharp(Buffer.from(arrayBuffer)).png().toBuffer();
-  return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+  const jpegBuffer = await sharp(Buffer.from(arrayBuffer)).jpeg({ quality: 85 }).toBuffer();
+  return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
 }
 
 export async function GET(request: Request): Promise<Response> {
@@ -36,87 +37,93 @@ export async function GET(request: Request): Promise<Response> {
 
   const price = Number(priceParam);
   const discountedPrice = discountedPriceParam ? Number(discountedPriceParam) : undefined;
-  const productImage = await toRenderablePng(imageUrl);
 
-  return new ImageResponse(
-    (
-      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
-        <img
-          src={productImage}
-          width={1080}
-          height={1920}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            position: 'absolute',
-            display: 'flex',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))',
-            padding: '40px 32px 56px',
-          }}
-        >
-          <div style={{ display: 'flex', color: 'white', fontSize: 34, fontWeight: 700 }}>
-            {title}
-          </div>
-          {typeof discountedPrice === 'number' ? (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+  try {
+    const productImage = await toRenderableImage(imageUrl);
+
+    return new ImageResponse(
+      (
+        <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative' }}>
+          <img
+            src={productImage}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              position: 'absolute',
+              display: 'flex',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              background: 'linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))',
+              padding: '40px 32px 56px',
+            }}
+          >
+            <div style={{ display: 'flex', color: 'white', fontSize: 34, fontWeight: 700 }}>
+              {title}
+            </div>
+            {typeof discountedPrice === 'number' ? (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    color: 'rgba(255,255,255,0.75)',
+                    fontSize: 26,
+                    textDecoration: 'line-through',
+                    marginTop: 8,
+                  }}
+                >
+                  De R${formatPrice(price)}
+                </div>
+                <div style={{ display: 'flex', color: '#ffe14d', fontSize: 52, fontWeight: 700 }}>
+                  R${formatPrice(discountedPrice)}
+                </div>
+              </div>
+            ) : (
               <div
                 style={{
                   display: 'flex',
-                  color: 'rgba(255,255,255,0.75)',
-                  fontSize: 26,
-                  textDecoration: 'line-through',
+                  color: '#ffe14d',
+                  fontSize: 52,
+                  fontWeight: 700,
                   marginTop: 8,
                 }}
               >
-                De R${formatPrice(price)}
+                R${formatPrice(price)}
               </div>
-              <div style={{ display: 'flex', color: '#ffe14d', fontSize: 52, fontWeight: 700 }}>
-                R${formatPrice(discountedPrice)}
+            )}
+            {coupon ? (
+              <div
+                style={{
+                  display: 'flex',
+                  color: 'white',
+                  fontSize: 26,
+                  background: '#ff3b5c',
+                  padding: '6px 20px',
+                  borderRadius: 999,
+                  marginTop: 12,
+                  alignSelf: 'flex-start',
+                }}
+              >
+                🎟️ {coupon}
               </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                color: '#ffe14d',
-                fontSize: 52,
-                fontWeight: 700,
-                marginTop: 8,
-              }}
-            >
-              R${formatPrice(price)}
-            </div>
-          )}
-          {coupon ? (
-            <div
-              style={{
-                display: 'flex',
-                color: 'white',
-                fontSize: 26,
-                background: '#ff3b5c',
-                padding: '6px 20px',
-                borderRadius: 999,
-                marginTop: 12,
-                alignSelf: 'flex-start',
-              }}
-            >
-              🎟️ {coupon}
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
-      </div>
-    ),
-    { width: 1080, height: 1920 },
-  );
+      ),
+      { width: 1080, height: 1920 },
+    );
+  } catch (err) {
+    return Response.json(
+      { erro: `Falha ao gerar imagem do Story: ${(err as Error).message}` },
+      { status: 500 },
+    );
+  }
 }
