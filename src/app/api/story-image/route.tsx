@@ -103,7 +103,7 @@ export async function GET(request: Request): Promise<Response> {
               padding: '40px 32px 56px',
             }}
           >
-            <div style={{ display: 'flex', color: 'white', fontSize: 34, fontWeight: 700 }}>
+            <div style={{ display: 'flex', color: 'white', fontSize: 48, fontWeight: 700 }}>
               {title}
             </div>
             {typeof discountedPrice === 'number' ? (
@@ -112,14 +112,14 @@ export async function GET(request: Request): Promise<Response> {
                   style={{
                     display: 'flex',
                     color: 'rgba(255,255,255,0.75)',
-                    fontSize: 26,
+                    fontSize: 34,
                     textDecoration: 'line-through',
-                    marginTop: 8,
+                    marginTop: 12,
                   }}
                 >
                   De R${formatPrice(price)}
                 </div>
-                <div style={{ display: 'flex', color: '#ffe14d', fontSize: 52, fontWeight: 700 }}>
+                <div style={{ display: 'flex', color: '#ffe14d', fontSize: 76, fontWeight: 700 }}>
                   R${formatPrice(discountedPrice)}
                 </div>
               </div>
@@ -128,9 +128,9 @@ export async function GET(request: Request): Promise<Response> {
                 style={{
                   display: 'flex',
                   color: '#ffe14d',
-                  fontSize: 52,
+                  fontSize: 76,
                   fontWeight: 700,
-                  marginTop: 8,
+                  marginTop: 12,
                 }}
               >
                 R${formatPrice(price)}
@@ -141,11 +141,11 @@ export async function GET(request: Request): Promise<Response> {
                 style={{
                   display: 'flex',
                   color: 'white',
-                  fontSize: 26,
+                  fontSize: 34,
                   background: '#ff3b5c',
-                  padding: '6px 20px',
+                  padding: '8px 24px',
                   borderRadius: 999,
-                  marginTop: 12,
+                  marginTop: 16,
                   alignSelf: 'flex-start',
                 }}
               >
