@@ -1,6 +1,6 @@
 import { buildPostText } from '@/lib/content/template';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
-import type { Product } from '@/lib/mercadolivre/affiliateLink';
+import type { Product } from '@/lib/marketplace/types';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
 import { PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';

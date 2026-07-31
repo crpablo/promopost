@@ -8,7 +8,7 @@ function makeDeps(overrides: Partial<PollerDeps> = {}): PollerDeps {
     loadCursor: vi.fn().mockResolvedValue(999),
     saveCursor: vi.fn().mockResolvedValue(undefined),
     extractPromo: vi.fn().mockResolvedValue({
-      isMercadoLivrePromo: false,
+      isPromo: false,
       link: null,
       coupon: null,
       discountedPrice: null,
@@ -30,7 +30,7 @@ describe('pollTelegram', () => {
     expect(deps.saveCursor).not.toHaveBeenCalled();
   });
 
-  it('ignora mensagem que não é promo do Mercado Livre, mas avança o cursor', async () => {
+  it('ignora mensagem que não é promo de nenhum marketplace suportado, mas avança o cursor', async () => {
     const deps = makeDeps({
       fetchNewMessages: vi.fn().mockResolvedValue([{ id: 10, text: 'bom dia pessoal' }]),
     });
@@ -47,7 +47,7 @@ describe('pollTelegram', () => {
     const deps = makeDeps({
       fetchNewMessages: vi.fn().mockResolvedValue([{ id: 11, text: 'promo boa' }]),
       extractPromo: vi.fn().mockResolvedValue({
-        isMercadoLivrePromo: true,
+        isPromo: true,
         link: 'https://www.mercadolivre.com.br/produto/p/MLB1',
         coupon: 'PROMO10',
         discountedPrice: 79.9,
@@ -63,6 +63,27 @@ describe('pollTelegram', () => {
       discountedPrice: 79.9,
     });
     expect(deps.saveCursor).toHaveBeenCalledWith(11);
+  });
+
+  it('chama o webhook e conta como promo quando a mensagem é uma promo da Shopee', async () => {
+    const deps = makeDeps({
+      fetchNewMessages: vi.fn().mockResolvedValue([{ id: 14, text: 'promo shopee' }]),
+      extractPromo: vi.fn().mockResolvedValue({
+        isPromo: true,
+        link: 'https://shopee.com.br/product/123456/789',
+        coupon: null,
+        discountedPrice: 45.5,
+      }),
+    });
+
+    const result = await pollTelegram(deps);
+
+    expect(result.promoCount).toBe(1);
+    expect(deps.callWebhook).toHaveBeenCalledWith({
+      link: 'https://shopee.com.br/product/123456/789',
+      discountedPrice: 45.5,
+    });
+    expect(deps.saveCursor).toHaveBeenCalledWith(14);
   });
 
   it('registra erro e avança o cursor mesmo assim quando a extração falha', async () => {
@@ -83,7 +104,7 @@ describe('pollTelegram', () => {
     const deps = makeDeps({
       fetchNewMessages: vi.fn().mockResolvedValue([{ id: 13, text: 'promo' }]),
       extractPromo: vi.fn().mockResolvedValue({
-        isMercadoLivrePromo: true,
+        isPromo: true,
         link: 'https://www.mercadolivre.com.br/produto/p/MLB2',
         coupon: null,
         discountedPrice: null,
@@ -191,7 +212,7 @@ describe('pollTelegram', () => {
     it('para o lote imediatamente quando saveCursor falha na primeira mensagem, sem processar as seguintes', async () => {
       const messages = [1, 2, 3].map((id) => ({ id, text: `msg ${id}` }));
       const extractPromo = vi.fn().mockResolvedValue({
-        isMercadoLivrePromo: false,
+        isPromo: false,
         link: null,
         coupon: null,
         discountedPrice: null,

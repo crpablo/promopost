@@ -1,4 +1,4 @@
-import type { Product } from './mercadolivre/affiliateLink';
+import type { Product } from './marketplace/types';
 
 export type PipelineStep = 'link_parse' | 'product_fetch' | 'affiliate_link' | 'shopify_publish';
 

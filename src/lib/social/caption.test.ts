@@ -47,4 +47,24 @@ describe('buildSocialCaption', () => {
       'Produto X\n\n🏷️ R$200,00\n\n🔗 Confira: https://meli.la/xyz (também no link da bio)\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
+
+  it('usa #shopee na legenda quando o produto vem da Shopee', () => {
+    const text = buildSocialCaption(
+      { title: 'Produto Y', price: 79.9, imageUrl: 'https://x.com/img.jpg', marketplace: 'shopee' },
+      'https://s.shopee.com.br/abc123',
+    );
+    expect(text).toBe(
+      'Produto Y\n\n🏷️ R$79,90\n\n🔗 Confira: https://s.shopee.com.br/abc123 (também no link da bio)\n\n#promocao #oferta #shopee #desconto',
+    );
+  });
+
+  it('usa #mercadolivre na legenda quando o produto não informa marketplace (default)', () => {
+    const text = buildSocialCaption(
+      { title: 'Produto Z', price: 50, imageUrl: 'https://x.com/img.jpg' },
+      'https://meli.la/xyz',
+    );
+    expect(text).toBe(
+      'Produto Z\n\n🏷️ R$50,00\n\n🔗 Confira: https://meli.la/xyz (também no link da bio)\n\n#promocao #oferta #mercadolivre #desconto',
+    );
+  });
 });

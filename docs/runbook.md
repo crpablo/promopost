@@ -254,3 +254,36 @@ Conferir na conta do TikTok (o post vai estar privado, visível só logado nela)
 - `Falha ao publicar no TikTok: picture_size_check_failed` (ou outro `fail_reason`) — a imagem do produto não passou nas checagens da TikTok; confira se a URL da imagem abre normalmente.
 - `tiktok: {ok:false, error:'WEBHOOK_BASE_URL não configurado'}` — falta a variável `WEBHOOK_BASE_URL` (mesma usada pela seção 10.5), necessária pra montar a URL do `/api/tiktok-image-proxy`.
 - Erro de URL de imagem não permitida vindo da própria TikTok — o domínio do passo 11.1.6 ainda não foi verificado (a verificação pode levar um tempo pra propagar depois de configurada).
+
+## 12. Shopee (opcional, sub-projeto separado)
+
+Cobre a captura automática de links da Shopee no mesmo canal Telegram já monitorado, publicando no blog e nas redes sociais igual já acontece com o Mercado Livre (ver `docs/superpowers/specs/2026-07-31-shopee-marketplace-design.md`).
+
+Diferente do Mercado Livre, a Shopee **não exige sessão logada nem bootstrap manual** — só credenciais fixas de app de afiliado.
+
+### 12.1 Obter as credenciais
+
+1. Acesse affiliate.shopee.com.br, logado na conta de afiliado já aprovada.
+2. Procure a seção **"Open API"** (pode estar em "Ferramentas" ou similar — a interface muda).
+3. Gere (ou copie, se já existir) o **App ID** e o **Secret Key** — vão em `SHOPEE_APP_ID`/`SHOPEE_SECRET_KEY`.
+
+### 12.2 Verificar o domínio da API
+
+O código chama `https://open-api.affiliate.shopee.com.br/graphql`. Esse domínio foi inferido de documentação pública de terceiros (a documentação oficial da Shopee é escassa e majoritariamente atrás de login) — **confirme dentro do painel de Open API** se esse é o endpoint correto pra sua conta antes do primeiro teste real. Se for diferente, ajuste a URL em `src/lib/mercadolivre/generate-link.playwright.mjs` (procure por `open-api.affiliate.shopee`).
+
+### 12.3 Teste manual
+
+Depois de configurar `SHOPEE_APP_ID`/`SHOPEE_SECRET_KEY` na Vercel e fazer o deploy, disparar o webhook (seção 6) com um link de produto real da Shopee (ou um link de encurtador que resolva pra um) e conferir a resposta:
+
+```json
+{ "postUrl": "..." }
+```
+
+Se falhar, confira os logs (`vercel logs`) — o erro real da chamada assinada aparece no stderr do script (marcador `SHOPEE_API_ERROR`), incluindo a resposta de erro devolvida pela Shopee.
+
+### 12.4 Se algo falhar
+
+- `Variáveis de ambiente da Shopee ausentes: SHOPEE_APP_ID, SHOPEE_SECRET_KEY` — faltam as credenciais na Vercel; repita o passo 12.1.
+- `Falha ao gerar link de afiliado da Shopee: SHOPEE_API_ERROR (...)` — o corpo do erro retornado pela Shopee aparece entre parênteses. Causas prováveis: assinatura incorreta (revise `calculateShopeeSignature` e o formato exato do header — a documentação pública pode ter mudado), domínio da API errado (repita o passo 12.2), ou timestamp fora da janela de validade (o request demorou demais entre calcular a assinatura e a Shopee recebê-la — improvável, mas possível sob rede lenta).
+- `Produto não encontrado na página do Mercado Livre: PRODUCT_NOT_FOUND (...)` **para um link da Shopee** — apesar da mensagem mencionar "Mercado Livre" (herdada do código original, ainda não generalizada), esse erro também dispara pra produtos Shopee cujas meta tags não bateram com os seletores usados (`og:image`, `meta[itemprop="price"]`) — o formato exato da página da Shopee ainda não foi confirmado contra o site real; pode precisar ajustar os seletores em `generate-link.playwright.mjs`.
+- Link não é reconhecido como Shopee (`MARKETPLACE_NOT_SUPPORTED`) mesmo sendo um link Shopee válido — confira se o hostname resolvido bate com `shopee.com.br` (subdomínios inclusive); domínios regionais diferentes (ex: `.co.id` de outros países) não são reconhecidos por design.
