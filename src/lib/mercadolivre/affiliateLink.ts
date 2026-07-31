@@ -4,12 +4,9 @@ import { Sandbox } from '@vercel/sandbox';
 import ms from 'ms';
 import { InvalidLinkError, ProductNotFoundError, SessionExpiredError } from '../pipeline';
 import { loadSession } from '../session/sessionStore';
+import type { Product } from '../marketplace/types';
 
-export interface Product {
-  title: string;
-  price: number;
-  imageUrl: string;
-}
+export type { Product };
 
 export interface AffiliateResult {
   product: Product;
