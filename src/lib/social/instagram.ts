@@ -1,5 +1,17 @@
 import type { SocialPostResult } from './facebook';
 
+// Loga o erro completo da Graph API (code/subcode/fbtrace_id/uso de rate
+// limit) pra diagnóstico — a mensagem lançada pro chamador continua curta,
+// mas isso preserva o detalhe real no log do servidor.
+function logGraphApiError(context: string, res: Response, json: unknown): void {
+  console.error(`${context}:`, {
+    status: res.status,
+    error: (json as { error?: unknown })?.error,
+    businessUseCaseUsage: res.headers?.get('x-business-use-case-usage') ?? null,
+    appUsage: res.headers?.get('x-app-usage') ?? null,
+  });
+}
+
 interface InstagramConfig {
   igUserId: string;
   accessToken: string;
@@ -30,6 +42,7 @@ async function waitForContainerReady(containerId: string, accessToken: string): 
     );
     const json = await res.json();
     if (!res.ok || json.error) {
+      logGraphApiError('Falha ao checar status da mídia do Instagram', res, json);
       throw new Error(`Falha ao checar status da mídia do Instagram: ${json.error?.message ?? res.status}`);
     }
     if (json.status_code === 'FINISHED') {
@@ -57,6 +70,7 @@ export async function postToInstagram(imageUrl: string, caption: string): Promis
   });
   const createJson = await createRes.json();
   if (!createRes.ok || createJson.error || !createJson.id) {
+    logGraphApiError('Falha ao criar mídia do Instagram', createRes, createJson);
     throw new Error(`Falha ao criar mídia do Instagram: ${createJson.error?.message ?? createRes.status}`);
   }
 
@@ -72,6 +86,7 @@ export async function postToInstagram(imageUrl: string, caption: string): Promis
   });
   const publishJson = await publishRes.json();
   if (!publishRes.ok || publishJson.error || !publishJson.id) {
+    logGraphApiError('Falha ao publicar mídia do Instagram', publishRes, publishJson);
     throw new Error(
       `Falha ao publicar mídia do Instagram: ${publishJson.error?.message ?? publishRes.status}`,
     );
@@ -94,6 +109,7 @@ export async function postStoryToInstagram(imageUrl: string): Promise<SocialPost
   });
   const createJson = await createRes.json();
   if (!createRes.ok || createJson.error || !createJson.id) {
+    logGraphApiError('Falha ao criar mídia do Story', createRes, createJson);
     throw new Error(`Falha ao criar mídia do Story: ${createJson.error?.message ?? createRes.status}`);
   }
 
@@ -109,6 +125,7 @@ export async function postStoryToInstagram(imageUrl: string): Promise<SocialPost
   });
   const publishJson = await publishRes.json();
   if (!publishRes.ok || publishJson.error || !publishJson.id) {
+    logGraphApiError('Falha ao publicar Story do Instagram', publishRes, publishJson);
     throw new Error(
       `Falha ao publicar Story do Instagram: ${publishJson.error?.message ?? publishRes.status}`,
     );

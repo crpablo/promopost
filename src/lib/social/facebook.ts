@@ -2,6 +2,18 @@ export interface SocialPostResult {
   postId: string;
 }
 
+// Loga o erro completo da Graph API (code/subcode/fbtrace_id/uso de rate
+// limit) pra diagnóstico — a mensagem lançada pro chamador continua curta,
+// mas isso preserva o detalhe real no log do servidor.
+function logGraphApiError(context: string, res: Response, json: unknown): void {
+  console.error(`${context}:`, {
+    status: res.status,
+    error: (json as { error?: unknown })?.error,
+    businessUseCaseUsage: res.headers?.get('x-business-use-case-usage') ?? null,
+    appUsage: res.headers?.get('x-app-usage') ?? null,
+  });
+}
+
 interface FacebookConfig {
   pageId: string;
   accessToken: string;
@@ -22,6 +34,7 @@ async function getPageAccessToken(pageId: string, systemUserToken: string): Prom
   );
   const json = await res.json();
   if (!res.ok || json.error || typeof json.access_token !== 'string') {
+    logGraphApiError('Falha ao obter token de acesso da Página', res, json);
     throw new Error(`Falha ao obter token de acesso da Página: ${json.error?.message ?? res.status}`);
   }
   return json.access_token;
@@ -47,6 +60,7 @@ export async function postToFacebook(imageUrl: string, caption: string): Promise
 
   const json = await res.json();
   if (!res.ok || json.error) {
+    logGraphApiError('Falha ao postar no Facebook', res, json);
     throw new Error(`Falha ao postar no Facebook: ${json.error?.message ?? res.status}`);
   }
 
