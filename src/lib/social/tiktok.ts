@@ -35,6 +35,25 @@ async function getValidAccessToken(): Promise<string> {
   return refreshed.accessToken;
 }
 
+// A API da TikTok exige consultar as opções de privacidade do criador antes
+// de publicar (POST /v2/post/publish/creator_info/query/) — sem essa chamada
+// prévia, o init rejeita com um erro genérico de "review integration
+// guidelines", mesmo enviando um privacy_level em tese válido.
+async function queryCreatorPrivacyOptions(accessToken: string): Promise<string[]> {
+  const res = await fetch('https://open.tiktokapis.com/v2/post/publish/creator_info/query/', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+  });
+  const json = await res.json();
+  if (!res.ok || json.error?.code !== 'ok' || !Array.isArray(json.data?.privacy_level_options)) {
+    throw new Error(`Falha ao consultar informações do criador no TikTok: ${json.error?.message ?? res.status}`);
+  }
+  return json.data.privacy_level_options;
+}
+
 async function waitForPublishComplete(publishId: string, accessToken: string): Promise<void> {
   for (let attempt = 0; attempt < STATUS_POLL_MAX_ATTEMPTS; attempt++) {
     const res = await fetch('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
@@ -69,6 +88,11 @@ export async function postToTikTok(
   description: string,
 ): Promise<SocialPostResult> {
   const accessToken = await getValidAccessToken();
+
+  const privacyLevelOptions = await queryCreatorPrivacyOptions(accessToken);
+  if (!privacyLevelOptions.includes('SELF_ONLY')) {
+    throw new Error('Falha ao publicar no TikTok: SELF_ONLY não disponível nas opções de privacidade do criador');
+  }
 
   const res = await fetch('https://open.tiktokapis.com/v2/post/publish/content/init/', {
     method: 'POST',

@@ -44,6 +44,13 @@ describe('postToTikTok', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
+        json: async () => ({
+          data: { privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'] },
+          error: { code: 'ok' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
       })
       .mockResolvedValueOnce({
@@ -57,7 +64,11 @@ describe('postToTikTok', () => {
     expect(result).toEqual({ postId: 'pub_1' });
     expect(saveTikTokTokensMock).not.toHaveBeenCalled();
 
-    const [initUrl, initOptions] = fetchMock.mock.calls[0];
+    const [creatorInfoUrl, creatorInfoOptions] = fetchMock.mock.calls[0];
+    expect(creatorInfoUrl).toBe('https://open.tiktokapis.com/v2/post/publish/creator_info/query/');
+    expect(creatorInfoOptions.headers.Authorization).toBe('Bearer valid-access-token');
+
+    const [initUrl, initOptions] = fetchMock.mock.calls[1];
     expect(initUrl).toBe('https://open.tiktokapis.com/v2/post/publish/content/init/');
     expect(initOptions.headers.Authorization).toBe('Bearer valid-access-token');
     expect(JSON.parse(initOptions.body)).toEqual({
@@ -79,9 +90,44 @@ describe('postToTikTok', () => {
       },
     });
 
-    const [statusUrl, statusOptions] = fetchMock.mock.calls[1];
+    const [statusUrl, statusOptions] = fetchMock.mock.calls[2];
     expect(statusUrl).toBe('https://open.tiktokapis.com/v2/post/publish/status/fetch/');
     expect(JSON.parse(statusOptions.body)).toEqual({ publish_id: 'pub_1' });
+  });
+
+  it('lança erro quando a consulta de informações do criador falha', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: { code: 'access_token_invalid', message: 'Token inválido' } }),
+      }),
+    );
+
+    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
+      'Falha ao consultar informações do criador no TikTok: Token inválido',
+    );
+  });
+
+  it('lança erro quando SELF_ONLY não está entre as opções de privacidade do criador', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: { privacy_level_options: ['PUBLIC_TO_EVERYONE'] },
+          error: { code: 'ok' },
+        }),
+      }),
+    );
+
+    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
+      'SELF_ONLY não disponível',
+    );
   });
 
   it('renova o token antes de postar quando ele está perto de expirar', async () => {
@@ -99,6 +145,13 @@ describe('postToTikTok', () => {
           access_token: 'new-access-token',
           refresh_token: 'new-refresh-token',
           expires_in: 86400,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: { privacy_level_options: ['SELF_ONLY'] },
+          error: { code: 'ok' },
         }),
       })
       .mockResolvedValueOnce({
@@ -123,7 +176,7 @@ describe('postToTikTok', () => {
     expect(refreshOptions.body.toString()).toContain('grant_type=refresh_token');
     expect(refreshOptions.body.toString()).toContain('refresh_token=old-refresh-token');
 
-    const [initUrl, initOptions] = fetchMock.mock.calls[1];
+    const [initUrl, initOptions] = fetchMock.mock.calls[2];
     expect(initUrl).toBe('https://open.tiktokapis.com/v2/post/publish/content/init/');
     expect(initOptions.headers.Authorization).toBe('Bearer new-access-token');
   });
@@ -160,13 +213,17 @@ describe('postToTikTok', () => {
   it('lança erro quando a criação da publicação falha', async () => {
     stubEnv();
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
+      })
+      .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ error: { code: 'invalid_params', message: 'Imagem inválida' } }),
-      }),
-    );
+      });
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
       'Falha ao publicar no TikTok: Imagem inválida',
@@ -178,6 +235,10 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
+      })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
@@ -234,6 +295,10 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
+      })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
