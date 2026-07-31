@@ -89,38 +89,42 @@ async function main() {
     }
     const isMercadoLivre =
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
+    const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
 
-    if (!isMercadoLivre) {
-      console.error(`LINK_NOT_MERCADOLIVRE (resolvido para: ${resolvedUrl})`);
+    if (!isMercadoLivre && !isShopee) {
+      console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
       process.exit(1);
     }
 
-    // 0.5. Encurtadores de terceiro (ex: go.promozone.ai) às vezes caem numa
-    // página de "Perfil Social" do afiliado no Mercado Livre em vez de ir
-    // direto pro produto — essa página tem um botão "Ir para produto" que
-    // leva pra ficha real (descoberto em validação manual real, 2026-07-29).
-    // Se existir, segue esse link antes de tentar extrair título/preço.
-    const irParaProdutoLink = page.getByRole('link', { name: /ir para produto/i }).first();
-    const productHref = await irParaProdutoLink.getAttribute('href', { timeout: 5000 }).catch(() => null);
-    if (productHref) {
-      await page.goto(productHref, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
-      await page.waitForTimeout(1500);
-      resolvedUrl = page.url();
+    if (isMercadoLivre) {
+      // 0.5. Encurtadores de terceiro (ex: go.promozone.ai) às vezes caem numa
+      // página de "Perfil Social" do afiliado no Mercado Livre em vez de ir
+      // direto pro produto — essa página tem um botão "Ir para produto" que
+      // leva pra ficha real (descoberto em validação manual real, 2026-07-29).
+      // Se existir, segue esse link antes de tentar extrair título/preço.
+      const irParaProdutoLink = page.getByRole('link', { name: /ir para produto/i }).first();
+      const productHref = await irParaProdutoLink.getAttribute('href', { timeout: 5000 }).catch(() => null);
+      if (productHref) {
+        await page.goto(productHref, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        resolvedUrl = page.url();
+      }
+
+      // 0.6. Cupons de loja/categoria inteira (sem produto único vinculado) às
+      // vezes vêm com um link genérico pro índice de listas curadas do afiliado
+      // (ex: /social/promozonevip/lists) em vez de um produto — essa página não
+      // tem título/preço/imagem de produto pra extrair (confirmado em validação
+      // manual real, 2026-07-31). Detecta esse formato antes de tentar extrair
+      // e reporta um motivo específico, em vez de cair no PRODUCT_NOT_FOUND
+      // genérico (que soa como falha inesperada, quando na verdade é esperado).
+      if (/\/social\/[^/]+\/lists\/?$/i.test(new URL(resolvedUrl).pathname)) {
+        console.error(`PRODUCT_LIST_LINK (resolvido para: ${resolvedUrl})`);
+        process.exit(1);
+      }
     }
 
-    // 0.6. Cupons de loja/categoria inteira (sem produto único vinculado) às
-    // vezes vêm com um link genérico pro índice de listas curadas do afiliado
-    // (ex: /social/promozonevip/lists) em vez de um produto — essa página não
-    // tem título/preço/imagem de produto pra extrair (confirmado em validação
-    // manual real, 2026-07-31). Detecta esse formato antes de tentar extrair
-    // e reporta um motivo específico, em vez de cair no PRODUCT_NOT_FOUND
-    // genérico (que soa como falha inesperada, quando na verdade é esperado).
-    if (/\/social\/[^/]+\/lists\/?$/i.test(new URL(resolvedUrl).pathname)) {
-      console.error(`PRODUCT_LIST_LINK (resolvido para: ${resolvedUrl})`);
-      process.exit(1);
-    }
-
-    // 1. Dados do produto (já estamos na página, resolvida acima)
+    // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
+    // padrão de meta tags pros dois marketplaces (Open Graph + itemprop).
     const title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
 
     const priceMeta = await page
@@ -143,7 +147,46 @@ async function main() {
       process.exit(1);
     }
 
-    // 2. Link de afiliado
+    if (isShopee) {
+      // 2 (Shopee). Gera o link de afiliado via API oficial (GraphQL,
+      // assinada com SHA256) — não precisa de um segundo browser nem de
+      // sessão logada, só das credenciais fixas do app de afiliado.
+      const appId = process.env.SHOPEE_APP_ID;
+      const secretKey = process.env.SHOPEE_SECRET_KEY;
+      if (!appId || !secretKey) {
+        console.error('SHOPEE_CREDENTIALS_MISSING');
+        process.exit(1);
+      }
+
+      const timestamp = Math.floor(Date.now() / 1000);
+      const query =
+        'mutation generateShortLink($input: ShortLinkInput!) { generateShortLink(input: $input) { shortLink } }';
+      const variables = { input: { originUrl: resolvedUrl, subIds: ['promopost'] } };
+      const payload = JSON.stringify({ query, variables });
+      const signature = calculateShopeeSignature(appId, timestamp, payload, secretKey);
+
+      const shopeeRes = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
+        },
+        body: payload,
+      });
+      const shopeeJson = await shopeeRes.json().catch(() => null);
+      const affiliateLink = shopeeJson?.data?.generateShortLink?.shortLink;
+
+      if (!shopeeRes.ok || shopeeJson?.errors || !affiliateLink) {
+        console.error(`SHOPEE_API_ERROR (${JSON.stringify(shopeeJson?.errors ?? shopeeRes.status)})`);
+        process.exit(1);
+      }
+
+      console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'shopee', affiliateLink }));
+      return;
+    }
+
+    // 2 (Mercado Livre). Visita o gerador de link de afiliado (só acessível
+    // pra conta já aprovada no Programa de Afiliados) e gera o link.
     await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub', {
       waitUntil: 'domcontentloaded',
       timeout: 45000,
