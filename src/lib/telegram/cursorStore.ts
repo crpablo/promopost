@@ -1,15 +1,23 @@
-import { list, put } from '@vercel/blob';
+import { head, put } from '@vercel/blob';
 
 const CURSOR_PATHNAME = 'telegram-cursor.json';
 
+// head() é Simple Operation na cobrança do Vercel Blob (list() é Advanced,
+// com teto de 2.000/mês no tier gratuito) — como este poller roda a cada
+// ~5min via cron, list() aqui esgotava a cota gratuita em poucos dias
+// (descoberto em produção real, 2026-07-31: conta suspensa por excesso de
+// Advanced Operations). head() dá a mesma informação (existe e a URL) sem
+// contar pro limite.
 export async function loadCursor(): Promise<number | null> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const { blobs } = await list({ prefix: CURSOR_PATHNAME, token });
-  const match = blobs.find((b) => b.pathname === CURSOR_PATHNAME);
-  if (!match) {
+  let blobUrl: string;
+  try {
+    const info = await head(CURSOR_PATHNAME, { token });
+    blobUrl = info.url;
+  } catch {
     return null;
   }
-  const res = await fetch(match.url, {
+  const res = await fetch(blobUrl, {
     headers: { authorization: `Bearer ${token}` },
   });
   if (!res.ok) {

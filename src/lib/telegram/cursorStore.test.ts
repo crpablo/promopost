@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { listMock, putMock } = vi.hoisted(() => ({
-  listMock: vi.fn(),
+const { headMock, putMock } = vi.hoisted(() => ({
+  headMock: vi.fn(),
   putMock: vi.fn(),
 }));
 
 vi.mock('@vercel/blob', () => ({
-  list: listMock,
+  head: headMock,
   put: putMock,
 }));
 
@@ -19,7 +19,7 @@ describe('loadCursor', () => {
   });
 
   it('retorna null quando não existe cursor salvo ainda', async () => {
-    listMock.mockResolvedValue({ blobs: [] });
+    headMock.mockRejectedValue(new Error('not found'));
 
     const cursor = await loadCursor();
 
@@ -27,9 +27,7 @@ describe('loadCursor', () => {
   });
 
   it('baixa e retorna o lastMessageId do cursor salvo', async () => {
-    listMock.mockResolvedValue({
-      blobs: [{ pathname: 'telegram-cursor.json', url: 'https://blob.vercel-storage.com/telegram-cursor.json' }],
-    });
+    headMock.mockResolvedValue({ url: 'https://blob.vercel-storage.com/telegram-cursor.json' });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ lastMessageId: 4242 }) }),
@@ -38,12 +36,11 @@ describe('loadCursor', () => {
     const cursor = await loadCursor();
 
     expect(cursor).toBe(4242);
+    expect(headMock).toHaveBeenCalledWith('telegram-cursor.json', expect.objectContaining({}));
   });
 
   it('lança erro quando o download do cursor falha', async () => {
-    listMock.mockResolvedValue({
-      blobs: [{ pathname: 'telegram-cursor.json', url: 'https://blob.vercel-storage.com/telegram-cursor.json' }],
-    });
+    headMock.mockResolvedValue({ url: 'https://blob.vercel-storage.com/telegram-cursor.json' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
 
     await expect(loadCursor()).rejects.toThrow('Falha ao carregar cursor do Telegram: 500');

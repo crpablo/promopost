@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { listMock, putMock } = vi.hoisted(() => ({
-  listMock: vi.fn(),
+const { headMock, putMock } = vi.hoisted(() => ({
+  headMock: vi.fn(),
   putMock: vi.fn(),
 }));
 
 vi.mock('@vercel/blob', () => ({
-  list: listMock,
+  head: headMock,
   put: putMock,
 }));
 
@@ -19,7 +19,7 @@ describe('loadTikTokTokens', () => {
   });
 
   it('retorna null quando não existe token salvo ainda', async () => {
-    listMock.mockResolvedValue({ blobs: [] });
+    headMock.mockRejectedValue(new Error('not found'));
 
     const tokens = await loadTikTokTokens();
 
@@ -27,9 +27,7 @@ describe('loadTikTokTokens', () => {
   });
 
   it('baixa e retorna o token salvo', async () => {
-    listMock.mockResolvedValue({
-      blobs: [{ pathname: 'tiktok-tokens.json', url: 'https://blob.vercel-storage.com/tiktok-tokens.json' }],
-    });
+    headMock.mockResolvedValue({ url: 'https://blob.vercel-storage.com/tiktok-tokens.json' });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -41,12 +39,11 @@ describe('loadTikTokTokens', () => {
     const tokens = await loadTikTokTokens();
 
     expect(tokens).toEqual({ accessToken: 'act123', refreshToken: 'rft456', expiresAt: 1234567890 });
+    expect(headMock).toHaveBeenCalledWith('tiktok-tokens.json', expect.objectContaining({}));
   });
 
   it('lança erro quando o download do token falha', async () => {
-    listMock.mockResolvedValue({
-      blobs: [{ pathname: 'tiktok-tokens.json', url: 'https://blob.vercel-storage.com/tiktok-tokens.json' }],
-    });
+    headMock.mockResolvedValue({ url: 'https://blob.vercel-storage.com/tiktok-tokens.json' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
 
     await expect(loadTikTokTokens()).rejects.toThrow('Falha ao carregar token do TikTok: 500');
