@@ -35,11 +35,17 @@ async function getValidAccessToken(): Promise<string> {
   return refreshed.accessToken;
 }
 
-// A API da TikTok exige consultar as opções de privacidade do criador antes
-// de publicar (POST /v2/post/publish/creator_info/query/) — sem essa chamada
-// prévia, o init rejeita com um erro genérico de "review integration
-// guidelines", mesmo enviando um privacy_level em tese válido.
-async function queryCreatorPrivacyOptions(accessToken: string): Promise<string[]> {
+interface CreatorInfo {
+  privacyLevelOptions: string[];
+  commentDisabled: boolean;
+}
+
+// A API da TikTok exige consultar as informações do criador antes de
+// publicar (POST /v2/post/publish/creator_info/query/) — sem essa chamada
+// prévia, ou enviando post_info que não reflete o que o creator_info
+// retornou (ex.: disable_comment divergente de comment_disabled), o init
+// rejeita com um erro genérico de "review integration guidelines".
+async function queryCreatorInfo(accessToken: string): Promise<CreatorInfo> {
   const res = await fetch('https://open.tiktokapis.com/v2/post/publish/creator_info/query/', {
     method: 'POST',
     headers: {
@@ -48,10 +54,18 @@ async function queryCreatorPrivacyOptions(accessToken: string): Promise<string[]
     },
   });
   const json = await res.json();
-  if (!res.ok || json.error?.code !== 'ok' || !Array.isArray(json.data?.privacy_level_options)) {
+  if (
+    !res.ok ||
+    json.error?.code !== 'ok' ||
+    !Array.isArray(json.data?.privacy_level_options) ||
+    typeof json.data?.comment_disabled !== 'boolean'
+  ) {
     throw new Error(`Falha ao consultar informações do criador no TikTok: ${json.error?.message ?? res.status}`);
   }
-  return json.data.privacy_level_options;
+  return {
+    privacyLevelOptions: json.data.privacy_level_options,
+    commentDisabled: json.data.comment_disabled,
+  };
 }
 
 async function waitForPublishComplete(publishId: string, accessToken: string): Promise<void> {
@@ -89,8 +103,8 @@ export async function postToTikTok(
 ): Promise<SocialPostResult> {
   const accessToken = await getValidAccessToken();
 
-  const privacyLevelOptions = await queryCreatorPrivacyOptions(accessToken);
-  if (!privacyLevelOptions.includes('SELF_ONLY')) {
+  const creatorInfo = await queryCreatorInfo(accessToken);
+  if (!creatorInfo.privacyLevelOptions.includes('SELF_ONLY')) {
     throw new Error('Falha ao publicar no TikTok: SELF_ONLY não disponível nas opções de privacidade do criador');
   }
 
@@ -110,7 +124,9 @@ export async function postToTikTok(
         // restrito a SELF_ONLY de qualquer forma — pedimos isso
         // explicitamente em vez de tentar PUBLIC_TO_EVERYONE.
         privacy_level: 'SELF_ONLY',
-        disable_comment: false,
+        // Precisa bater com comment_disabled do creator_info — mandar um
+        // valor divergente também faz o init ser rejeitado.
+        disable_comment: creatorInfo.commentDisabled,
         auto_add_music: false,
         brand_content_toggle: false,
         brand_organic_toggle: false,

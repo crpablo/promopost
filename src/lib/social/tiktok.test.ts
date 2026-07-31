@@ -29,6 +29,16 @@ const VALID_TOKENS = {
   expiresAt: Date.now() + 60 * 60 * 1000, // expira em 1h — não precisa renovar
 };
 
+function creatorInfoResponse(privacyLevelOptions: string[], commentDisabled = false) {
+  return {
+    ok: true,
+    json: async () => ({
+      data: { privacy_level_options: privacyLevelOptions, comment_disabled: commentDisabled },
+      error: { code: 'ok' },
+    }),
+  };
+}
+
 describe('postToTikTok', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -42,13 +52,7 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: { privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'] },
-          error: { code: 'ok' },
-        }),
-      })
+      .mockResolvedValueOnce(creatorInfoResponse(['PUBLIC_TO_EVERYONE', 'SELF_ONLY']))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
@@ -95,6 +99,28 @@ describe('postToTikTok', () => {
     expect(JSON.parse(statusOptions.body)).toEqual({ publish_id: 'pub_1' });
   });
 
+  it('repassa disable_comment = true quando o creator_info reporta comment_disabled', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY'], true))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { status: 'PUBLISH_COMPLETE' }, error: { code: 'ok' } }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda completa');
+
+    const [, initOptions] = fetchMock.mock.calls[1];
+    expect(JSON.parse(initOptions.body).post_info.disable_comment).toBe(true);
+  });
+
   it('lança erro quando a consulta de informações do criador falha', async () => {
     stubEnv();
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
@@ -114,16 +140,7 @@ describe('postToTikTok', () => {
   it('lança erro quando SELF_ONLY não está entre as opções de privacidade do criador', async () => {
     stubEnv();
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: { privacy_level_options: ['PUBLIC_TO_EVERYONE'] },
-          error: { code: 'ok' },
-        }),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(creatorInfoResponse(['PUBLIC_TO_EVERYONE'])));
 
     await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
       'SELF_ONLY não disponível',
@@ -147,13 +164,7 @@ describe('postToTikTok', () => {
           expires_in: 86400,
         }),
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: { privacy_level_options: ['SELF_ONLY'] },
-          error: { code: 'ok' },
-        }),
-      })
+      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
@@ -215,10 +226,7 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
-      })
+      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ error: { code: 'invalid_params', message: 'Imagem inválida' } }),
@@ -235,10 +243,7 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
-      })
+      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
@@ -295,10 +300,7 @@ describe('postToTikTok', () => {
     loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { privacy_level_options: ['SELF_ONLY'] }, error: { code: 'ok' } }),
-      })
+      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
