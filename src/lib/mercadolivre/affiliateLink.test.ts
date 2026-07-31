@@ -93,6 +93,19 @@ describe('fetchProductAndAffiliateLink', () => {
     ).rejects.toThrow('Link não leva a uma página do Mercado Livre');
   });
 
+  it('lança InvalidLinkError (não ProductNotFoundError) quando o script reporta PRODUCT_LIST_LINK no stderr', async () => {
+    runCommandMock.mockResolvedValue({
+      exitCode: 1,
+      stdout: async () => '',
+      stderr: async () =>
+        'PRODUCT_LIST_LINK (resolvido para: https://www.mercadolivre.com.br/social/promozonevip/lists)',
+    });
+
+    await expect(
+      fetchProductAndAffiliateLink('https://www.mercadolivre.com.br/social/promozonevip/lists'),
+    ).rejects.toThrow('índice de listas');
+  });
+
   it('lança erro genérico quando o script falha por outro motivo', async () => {
     runCommandMock.mockResolvedValue({
       exitCode: 1,

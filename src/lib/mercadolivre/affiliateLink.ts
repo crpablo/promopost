@@ -109,6 +109,11 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     if (stderr.includes('LINK_NOT_MERCADOLIVRE')) {
       throw new InvalidLinkError(`Link não leva a uma página do Mercado Livre: ${stderr.slice(0, 300)}`);
     }
+    if (stderr.includes('PRODUCT_LIST_LINK')) {
+      throw new InvalidLinkError(
+        `Link aponta pro índice de listas do afiliado, sem produto único associado: ${stderr.slice(0, 300)}`,
+      );
+    }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   }
 

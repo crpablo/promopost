@@ -90,6 +90,18 @@ try {
     resolvedUrl = page.url();
   }
 
+  // 0.6. Cupons de loja/categoria inteira (sem produto único vinculado) às
+  // vezes vêm com um link genérico pro índice de listas curadas do afiliado
+  // (ex: /social/promozonevip/lists) em vez de um produto — essa página não
+  // tem título/preço/imagem de produto pra extrair (confirmado em validação
+  // manual real, 2026-07-31). Detecta esse formato antes de tentar extrair
+  // e reporta um motivo específico, em vez de cair no PRODUCT_NOT_FOUND
+  // genérico (que soa como falha inesperada, quando na verdade é esperado).
+  if (/\/social\/[^/]+\/lists\/?$/i.test(new URL(resolvedUrl).pathname)) {
+    console.error(`PRODUCT_LIST_LINK (resolvido para: ${resolvedUrl})`);
+    process.exit(1);
+  }
+
   // 1. Dados do produto (já estamos na página, resolvida acima)
   const title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
 
