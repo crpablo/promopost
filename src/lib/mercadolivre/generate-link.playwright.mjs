@@ -91,6 +91,21 @@ async function main() {
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
     const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
 
+    // Checa as credenciais da Shopee assim que sabemos que é Shopee (logo
+    // após o redirect ser resolvido), antes de gastar tempo de Sandbox e
+    // browser navegando/raspando título/preço/imagem que não vão ser usados
+    // se a chamada à API de afiliados nem vai poder ser feita.
+    let shopeeAppId;
+    let shopeeSecretKey;
+    if (isShopee) {
+      shopeeAppId = process.env.SHOPEE_APP_ID;
+      shopeeSecretKey = process.env.SHOPEE_SECRET_KEY;
+      if (!shopeeAppId || !shopeeSecretKey) {
+        console.error('SHOPEE_CREDENTIALS_MISSING');
+        process.exit(1);
+      }
+    }
+
     if (!isMercadoLivre && !isShopee) {
       console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
       process.exit(1);
@@ -125,7 +140,17 @@ async function main() {
 
     // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
     // padrão de meta tags pros dois marketplaces (Open Graph + itemprop).
-    const title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
+    let title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
+    if (!title) {
+      // Páginas de produto da Shopee frequentemente não expõem o nome do
+      // produto num <h1> — cai pro og:title, mesmo padrão de .getAttribute
+      // já usado abaixo pra imageUrl/priceMeta.
+      title = await page
+        .locator('meta[property="og:title"]')
+        .first()
+        .getAttribute('content')
+        .catch(() => null);
+    }
 
     const priceMeta = await page
       .locator('meta[itemprop="price"], meta[property="product:price:amount"]')
@@ -150,13 +175,10 @@ async function main() {
     if (isShopee) {
       // 2 (Shopee). Gera o link de afiliado via API oficial (GraphQL,
       // assinada com SHA256) — não precisa de um segundo browser nem de
-      // sessão logada, só das credenciais fixas do app de afiliado.
-      const appId = process.env.SHOPEE_APP_ID;
-      const secretKey = process.env.SHOPEE_SECRET_KEY;
-      if (!appId || !secretKey) {
-        console.error('SHOPEE_CREDENTIALS_MISSING');
-        process.exit(1);
-      }
+      // sessão logada, só das credenciais fixas do app de afiliado (já
+      // validadas mais acima, logo após sabermos que é Shopee).
+      const appId = shopeeAppId;
+      const secretKey = shopeeSecretKey;
 
       const timestamp = Math.floor(Date.now() / 1000);
       const query =
@@ -165,15 +187,30 @@ async function main() {
       const payload = JSON.stringify({ query, variables });
       const signature = calculateShopeeSignature(appId, timestamp, payload, secretKey);
 
-      const shopeeRes = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
-        },
-        body: payload,
-      });
-      const shopeeJson = await shopeeRes.json().catch(() => null);
+      let shopeeRes;
+      let shopeeJson;
+      try {
+        shopeeRes = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
+          },
+          body: payload,
+          // Evita que uma falha de rede/DNS (ex.: domínio errado) trave a
+          // Sandbox indefinidamente — mesma ordem de grandeza dos outros
+          // timeouts de rede deste arquivo (15-45s).
+          signal: AbortSignal.timeout(15000),
+        });
+        shopeeJson = await shopeeRes.json().catch(() => null);
+      } catch (err) {
+        // Erro de rede/DNS/timeout (ex.: TypeError: fetch failed) escaparia
+        // pro catch genérico do main() e viraria uma mensagem de erro
+        // genérica em vez do SHOPEE_API_ERROR documentado no runbook —
+        // capturamos aqui e re-emitimos com o marcador certo.
+        console.error(`SHOPEE_API_ERROR (${String(err)})`);
+        process.exit(1);
+      }
       const affiliateLink = shopeeJson?.data?.generateShortLink?.shortLink;
 
       if (!shopeeRes.ok || shopeeJson?.errors || !affiliateLink) {

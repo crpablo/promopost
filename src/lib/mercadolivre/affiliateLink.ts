@@ -6,8 +6,6 @@ import { InvalidLinkError, ProductNotFoundError, SessionExpiredError } from '../
 import { loadSession } from '../session/sessionStore';
 import type { Product } from '../marketplace/types';
 
-export type { Product };
-
 export interface AffiliateResult {
   product: Product;
   affiliateLink: string;
@@ -78,8 +76,22 @@ async function getSandbox() {
   });
 }
 
+const EMPTY_STORAGE_STATE = Buffer.from(JSON.stringify({ cookies: [], origins: [] }));
+
 export async function fetchProductAndAffiliateLink(productLink: string): Promise<AffiliateResult> {
-  const sessionBuffer = await loadSession();
+  // A Shopee não usa sessão logada (a API de afiliados usa credenciais fixas
+  // via env var) — carregar a sessão do Mercado Livre não pode ser um
+  // pré-requisito rígido pra esse fluxo. Se a sessão do ML não estiver
+  // configurada ou o Blob falhar, seguimos com um storageState vazio: o
+  // fluxo Mercado Livre continua falhando (com SESSION_EXPIRED, dentro do
+  // script, quando o formulário do linkbuilder não aparecer) do jeito que já
+  // falhava hoje, e o fluxo Shopee fica inteiramente livre dessa dependência.
+  let sessionBuffer: Buffer;
+  try {
+    sessionBuffer = await loadSession();
+  } catch {
+    sessionBuffer = EMPTY_STORAGE_STATE;
+  }
   const scriptContent = readFileSync(SCRIPT_PATH);
 
   const sandbox = await getSandbox();
@@ -105,7 +117,7 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
       throw new SessionExpiredError();
     }
     if (stderr.includes('PRODUCT_NOT_FOUND')) {
-      throw new ProductNotFoundError(`Produto não encontrado na página do Mercado Livre: ${stderr.slice(0, 300)}`);
+      throw new ProductNotFoundError(`Produto não encontrado na página do produto: ${stderr.slice(0, 300)}`);
     }
     if (stderr.includes('MARKETPLACE_NOT_SUPPORTED')) {
       throw new InvalidLinkError(`Link não leva a um marketplace suportado: ${stderr.slice(0, 300)}`);

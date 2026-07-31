@@ -14,7 +14,7 @@ describe('extractPromo', () => {
   it('extrai link, cupom e preço com desconto de uma promo do Mercado Livre', async () => {
     generateObjectMock.mockResolvedValue({
       object: {
-        isMercadoLivrePromo: true,
+        isPromo: true,
         link: 'https://www.mercadolivre.com.br/produto/p/MLB123',
         coupon: 'PROMO10',
         discountedPrice: 89.9,
@@ -26,7 +26,7 @@ describe('extractPromo', () => {
     );
 
     expect(result).toEqual({
-      isMercadoLivrePromo: true,
+      isPromo: true,
       link: 'https://www.mercadolivre.com.br/produto/p/MLB123',
       coupon: 'PROMO10',
       discountedPrice: 89.9,
@@ -41,7 +41,7 @@ describe('extractPromo', () => {
   it('extrai promo sem cupom (coupon e discountedPrice nulos)', async () => {
     generateObjectMock.mockResolvedValue({
       object: {
-        isMercadoLivrePromo: true,
+        isPromo: true,
         link: 'https://www.mercadolivre.com.br/produto/p/MLB999',
         coupon: null,
         discountedPrice: null,
@@ -54,20 +54,20 @@ describe('extractPromo', () => {
     expect(result.discountedPrice).toBeNull();
   });
 
-  it('retorna isMercadoLivrePromo false pra mensagem que não é promo do Mercado Livre', async () => {
+  it('retorna isPromo false pra mensagem que não é promo de nenhum marketplace suportado', async () => {
     generateObjectMock.mockResolvedValue({
-      object: { isMercadoLivrePromo: false, link: null, coupon: null, discountedPrice: null },
+      object: { isPromo: false, link: null, coupon: null, discountedPrice: null },
     });
 
     const result = await extractPromo('Bom dia pessoal, tudo certo?');
 
-    expect(result.isMercadoLivrePromo).toBe(false);
+    expect(result.isPromo).toBe(false);
   });
 
   it('extrai discountedPrice mesmo sem cupom (desconto direto)', async () => {
     generateObjectMock.mockResolvedValue({
       object: {
-        isMercadoLivrePromo: true,
+        isPromo: true,
         link: 'https://www.mercadolivre.com.br/produto/p/MLB555',
         coupon: null,
         discountedPrice: 129.9,
@@ -80,5 +80,27 @@ describe('extractPromo', () => {
 
     expect(result.coupon).toBeNull();
     expect(result.discountedPrice).toBe(129.9);
+  });
+
+  it('extrai link, cupom e preço com desconto de uma promo da Shopee', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://shopee.com.br/product/123456/789',
+        coupon: 'SHOPEE20',
+        discountedPrice: 45.5,
+      },
+    });
+
+    const result = await extractPromo(
+      'Panela de Pressão Elétrica\nDe R$99,90 por R$45,50\nCupom: SHOPEE20\nhttps://shopee.com.br/product/123456/789',
+    );
+
+    expect(result).toEqual({
+      isPromo: true,
+      link: 'https://shopee.com.br/product/123456/789',
+      coupon: 'SHOPEE20',
+      discountedPrice: 45.5,
+    });
   });
 });

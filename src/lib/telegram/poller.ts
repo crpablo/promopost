@@ -108,7 +108,7 @@ async function runPoll(deps: PollerDeps): Promise<PollResult> {
       continue;
     }
 
-    if (!extraction.isMercadoLivrePromo || !extraction.link) {
+    if (!extraction.isPromo || !extraction.link) {
       if (!(await saveCursorOrRecordError(deps, message, errors))) {
         break;
       }

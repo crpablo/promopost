@@ -12,7 +12,7 @@ function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-const ALLOWED_IMAGE_HOSTS = [/(^|\.)mlstatic\.com$/i];
+const ALLOWED_IMAGE_HOSTS = [/(^|\.)mlstatic\.com$/i, /(^|\.)susercontent\.com$/i];
 
 function isAllowedImageHost(url: string): boolean {
   try {

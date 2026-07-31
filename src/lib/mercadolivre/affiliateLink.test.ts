@@ -23,6 +23,7 @@ import { fetchProductAndAffiliateLink } from './affiliateLink';
 describe('fetchProductAndAffiliateLink', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('retorna produto e link de afiliado quando o script termina com sucesso', async () => {
@@ -205,7 +206,35 @@ describe('fetchProductAndAffiliateLink', () => {
         env: expect.objectContaining({ SHOPEE_APP_ID: 'app123', SHOPEE_SECRET_KEY: 'secret456' }),
       }),
     );
+  });
 
-    vi.unstubAllEnvs();
+  it('processa um link da Shopee normalmente mesmo quando loadSession (sessão do Mercado Livre) falha', async () => {
+    const { loadSession } = await import('../session/sessionStore');
+    vi.mocked(loadSession).mockRejectedValueOnce(new Error('ML_SESSION_BLOB_URL não configurada'));
+
+    runCommandMock.mockResolvedValue({
+      exitCode: 0,
+      stdout: async () =>
+        `${JSON.stringify({
+          title: 'Fone Bluetooth Shopee',
+          price: 59.9,
+          imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
+          marketplace: 'shopee',
+          affiliateLink: 'https://s.shopee.com.br/abc123',
+        })}\n`,
+      stderr: async () => '',
+    });
+
+    const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
+
+    expect(result.product.marketplace).toBe('shopee');
+    expect(writeFilesMock).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '/vercel/sandbox/session.json',
+          content: Buffer.from(JSON.stringify({ cookies: [], origins: [] })),
+        }),
+      ]),
+    );
   });
 });
