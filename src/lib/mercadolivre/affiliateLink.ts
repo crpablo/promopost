@@ -89,7 +89,8 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
   let sessionBuffer: Buffer;
   try {
     sessionBuffer = await loadSession();
-  } catch {
+  } catch (err) {
+    console.warn('Falha ao carregar sessão do Mercado Livre, seguindo com storageState vazio:', err);
     sessionBuffer = EMPTY_STORAGE_STATE;
   }
   const scriptContent = readFileSync(SCRIPT_PATH);

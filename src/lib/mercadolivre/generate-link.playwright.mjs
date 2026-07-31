@@ -141,10 +141,13 @@ async function main() {
     // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
     // padrão de meta tags pros dois marketplaces (Open Graph + itemprop).
     let title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
-    if (!title) {
+    if (!title && isShopee) {
       // Páginas de produto da Shopee frequentemente não expõem o nome do
       // produto num <h1> — cai pro og:title, mesmo padrão de .getAttribute
-      // já usado abaixo pra imageUrl/priceMeta.
+      // já usado abaixo pra imageUrl/priceMeta. Restrito à Shopee pra não
+      // mudar o comportamento do Mercado Livre (que já funciona com h1) —
+      // uma página de erro/interstitial do ML sem h1 mas com og:title
+      // continuaria corretamente caindo em PRODUCT_NOT_FOUND.
       title = await page
         .locator('meta[property="og:title"]')
         .first()
