@@ -1,40 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { readTextFileMock } = vi.hoisted(() => ({
+  readTextFileMock: vi.fn(),
+}));
+
+vi.mock('../storage/localStore', () => ({
+  readTextFile: readTextFileMock,
+  resolveDataPath: (filename: string) => `/data/${filename}`,
+}));
+
 import { loadSession } from './sessionStore';
 
 describe('loadSession', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+    vi.clearAllMocks();
   });
 
-  it('baixa a sessão da url configurada usando o token como bearer', async () => {
-    vi.stubEnv('TELEGRAM_SESSION_BLOB_URL', 'https://blob.vercel-storage.com/telegram-session.txt');
-    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'fake-token');
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => '  1BQANOTE...sessionstring...  \n',
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('lê a sessão do arquivo local, já sem espaços nas pontas', async () => {
+    readTextFileMock.mockResolvedValue('1BQANOTE...sessionstring...');
 
     const session = await loadSession();
 
-    expect(fetchMock).toHaveBeenCalledWith('https://blob.vercel-storage.com/telegram-session.txt', {
-      headers: { authorization: 'Bearer fake-token' },
-    });
     expect(session).toBe('1BQANOTE...sessionstring...');
+    expect(readTextFileMock).toHaveBeenCalledWith('telegram-session.txt');
   });
 
-  it('lança erro quando TELEGRAM_SESSION_BLOB_URL não está configurada', async () => {
-    vi.stubEnv('TELEGRAM_SESSION_BLOB_URL', '');
-    await expect(loadSession()).rejects.toThrow('TELEGRAM_SESSION_BLOB_URL não configurada');
-  });
+  it('lança erro quando o arquivo de sessão não existe', async () => {
+    readTextFileMock.mockResolvedValue(null);
 
-  it('lança erro quando a resposta não é ok', async () => {
-    vi.stubEnv('TELEGRAM_SESSION_BLOB_URL', 'https://blob.vercel-storage.com/telegram-session.txt');
-    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'fake-token');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
-
-    await expect(loadSession()).rejects.toThrow('Falha ao carregar sessão do Telegram: 403');
+    await expect(loadSession()).rejects.toThrow(
+      'Arquivo de sessão do Telegram não encontrado: /data/telegram-session.txt',
+    );
   });
 });
