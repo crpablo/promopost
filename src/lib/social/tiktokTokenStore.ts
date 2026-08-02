@@ -1,6 +1,6 @@
-import { head, put } from '@vercel/blob';
+import { readJsonFile, writeJsonFile } from '../storage/localStore';
 
-const TOKENS_PATHNAME = 'tiktok-tokens.json';
+const TOKENS_FILENAME = 'tiktok-tokens.json';
 
 export interface TikTokTokens {
   accessToken: string;
@@ -8,25 +8,12 @@ export interface TikTokTokens {
   expiresAt: number;
 }
 
-// head() é Simple Operation na cobrança do Vercel Blob (list() é Advanced,
-// com teto de 2.000/mês no tier gratuito) — ver mesmo comentário em
-// src/lib/telegram/cursorStore.ts (descoberto em produção real, 2026-07-31).
 export async function loadTikTokTokens(): Promise<TikTokTokens | null> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  let blobUrl: string;
   try {
-    const info = await head(TOKENS_PATHNAME, { token });
-    blobUrl = info.url;
-  } catch {
-    return null;
+    return await readJsonFile<TikTokTokens>(TOKENS_FILENAME);
+  } catch (err) {
+    throw new Error(`Falha ao carregar token do TikTok: ${(err as Error).message}`);
   }
-  const res = await fetch(blobUrl, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Falha ao carregar token do TikTok: ${res.status}`);
-  }
-  return res.json();
 }
 
 // Troca um código de autorização (grant_type=authorization_code) ou um
@@ -72,13 +59,7 @@ export async function exchangeTikTokToken(params: Record<string, string>): Promi
 
 export async function saveTikTokTokens(tokens: TikTokTokens): Promise<void> {
   try {
-    await put(TOKENS_PATHNAME, JSON.stringify(tokens), {
-      access: 'private',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
+    await writeJsonFile(TOKENS_FILENAME, tokens);
   } catch (err) {
     throw new Error(`Falha ao salvar token do TikTok: ${(err as Error).message}`);
   }
