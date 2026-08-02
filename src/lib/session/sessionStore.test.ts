@@ -1,32 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { readBufferFileMock } = vi.hoisted(() => ({
+  readBufferFileMock: vi.fn(),
+}));
+
+vi.mock('../storage/localStore', () => ({
+  readBufferFile: readBufferFileMock,
+  resolveDataPath: (filename: string) => `/data/${filename}`,
+}));
+
 import { loadSession } from './sessionStore';
 
 describe('loadSession', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+    vi.clearAllMocks();
   });
 
-  it('baixa a sessão da url configurada usando o token como bearer', async () => {
-    vi.stubEnv('ML_SESSION_BLOB_URL', 'https://blob.vercel-storage.com/ml-session-abc.json');
-    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'fake-token');
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new TextEncoder().encode('{"cookies":[]}').buffer,
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('lê a sessão do arquivo local como Buffer', async () => {
+    readBufferFileMock.mockResolvedValue(Buffer.from('{"cookies":[]}'));
 
     const buffer = await loadSession();
 
-    expect(fetchMock).toHaveBeenCalledWith('https://blob.vercel-storage.com/ml-session-abc.json', {
-      headers: { authorization: 'Bearer fake-token' },
-    });
     expect(buffer.toString()).toBe('{"cookies":[]}');
+    expect(readBufferFileMock).toHaveBeenCalledWith('ml-session.json');
   });
 
-  it('lança erro quando ML_SESSION_BLOB_URL não está configurada', async () => {
-    vi.stubEnv('ML_SESSION_BLOB_URL', '');
-    await expect(loadSession()).rejects.toThrow('ML_SESSION_BLOB_URL não configurada');
+  it('lança erro quando o arquivo de sessão não existe', async () => {
+    readBufferFileMock.mockResolvedValue(null);
+
+    await expect(loadSession()).rejects.toThrow(
+      'Arquivo de sessão do Mercado Livre não encontrado: /data/ml-session.json',
+    );
   });
 });

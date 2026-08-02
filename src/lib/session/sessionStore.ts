@@ -1,15 +1,11 @@
+import { readBufferFile, resolveDataPath } from '../storage/localStore';
+
+const SESSION_FILENAME = 'ml-session.json';
+
 export async function loadSession(): Promise<Buffer> {
-  const url = process.env.ML_SESSION_BLOB_URL;
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!url) {
-    throw new Error('ML_SESSION_BLOB_URL não configurada');
+  const buffer = await readBufferFile(SESSION_FILENAME);
+  if (buffer === null) {
+    throw new Error(`Arquivo de sessão do Mercado Livre não encontrado: ${resolveDataPath(SESSION_FILENAME)}`);
   }
-  const res = await fetch(url, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Falha ao carregar sessão do Blob: ${res.status}`);
-  }
-  const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  return buffer;
 }
