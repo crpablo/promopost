@@ -1,17 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { runCommandMock, writeFilesMock, getOrCreateMock } = vi.hoisted(() => {
-  const runCommandMock = vi.fn();
-  const writeFilesMock = vi.fn();
-  const getOrCreateMock = vi.fn().mockResolvedValue({
-    writeFiles: writeFilesMock,
-    runCommand: runCommandMock,
-  });
-  return { runCommandMock, writeFilesMock, getOrCreateMock };
-});
+const { execFileMock } = vi.hoisted(() => ({
+  execFileMock: vi.fn(),
+}));
 
-vi.mock('@vercel/sandbox', () => ({
-  Sandbox: { getOrCreate: getOrCreateMock },
+vi.mock('node:child_process', () => ({
+  execFile: execFileMock,
 }));
 
 vi.mock('../session/sessionStore', () => ({
@@ -20,6 +14,19 @@ vi.mock('../session/sessionStore', () => ({
 
 import { fetchProductAndAffiliateLink } from './affiliateLink';
 
+function mockExecFileSuccess(stdout: string) {
+  execFileMock.mockImplementation((_cmd, _args, _options, callback) => {
+    callback(null, stdout, '');
+  });
+}
+
+function mockExecFileFailure(stderr: string) {
+  execFileMock.mockImplementation((_cmd, _args, _options, callback) => {
+    const err = Object.assign(new Error('Command failed'), { stderr });
+    callback(err, '', stderr);
+  });
+}
+
 describe('fetchProductAndAffiliateLink', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -27,17 +34,15 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('retorna produto e link de afiliado quando o script termina com sucesso', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 0,
-      stdout: async () =>
-        `${JSON.stringify({
-          title: 'Fone de Ouvido Bluetooth XYZ',
-          price: 149.9,
-          imageUrl: 'https://http2.mlstatic.com/img.jpg',
-          affiliateLink: 'https://meli.la/abc123',
-        })}\n`,
-      stderr: async () => '',
-    });
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Fone de Ouvido Bluetooth XYZ',
+        price: 149.9,
+        imageUrl: 'https://http2.mlstatic.com/img.jpg',
+        marketplace: 'mercadolivre',
+        affiliateLink: 'https://meli.la/abc123',
+      })}\n`,
+    );
 
     const result = await fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123');
 
@@ -50,21 +55,18 @@ describe('fetchProductAndAffiliateLink', () => {
       },
       affiliateLink: 'https://meli.la/abc123',
     });
-    expect(writeFilesMock).toHaveBeenCalled();
-    expect(runCommandMock).toHaveBeenCalledWith(
+    expect(execFileMock).toHaveBeenCalledWith(
+      'node',
+      expect.arrayContaining([expect.stringContaining('generate-link.playwright.mjs'), 'https://mercadolivre.com.br/MLB123']),
       expect.objectContaining({
-        cmd: 'node',
-        args: ['generate-link.mjs', 'https://mercadolivre.com.br/MLB123'],
+        env: expect.objectContaining({ ML_SESSION_PATH: expect.any(String) }),
       }),
+      expect.any(Function),
     );
   });
 
   it('lança SessionExpiredError quando o script reporta SESSION_EXPIRED no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'SESSION_EXPIRED',
-    });
+    mockExecFileFailure('SESSION_EXPIRED');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -72,11 +74,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança ProductNotFoundError quando o script reporta PRODUCT_NOT_FOUND no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)',
-    });
+    mockExecFileFailure('PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -84,11 +82,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança InvalidLinkError quando o script reporta MARKETPLACE_NOT_SUPPORTED no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'MARKETPLACE_NOT_SUPPORTED (resolvido para: https://exemplo.com/outra-coisa)',
-    });
+    mockExecFileFailure('MARKETPLACE_NOT_SUPPORTED (resolvido para: https://exemplo.com/outra-coisa)');
 
     await expect(
       fetchProductAndAffiliateLink('https://go.promozone.ai/mercadolivre/PwQ6x6'),
@@ -96,75 +90,15 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança InvalidLinkError (não ProductNotFoundError) quando o script reporta PRODUCT_LIST_LINK no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () =>
-        'PRODUCT_LIST_LINK (resolvido para: https://www.mercadolivre.com.br/social/promozonevip/lists)',
-    });
+    mockExecFileFailure('PRODUCT_LIST_LINK (resolvido para: https://www.mercadolivre.com.br/social/promozonevip/lists)');
 
     await expect(
       fetchProductAndAffiliateLink('https://www.mercadolivre.com.br/social/promozonevip/lists'),
     ).rejects.toThrow('índice de listas');
   });
 
-  it('lança erro genérico quando o script falha por outro motivo', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'TimeoutError: locator not found',
-    });
-
-    await expect(
-      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
-    ).rejects.toThrow('Falha ao gerar link de afiliado');
-  });
-
-  it('lança erro quando a saída não é um JSON válido', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 0,
-      stdout: async () => 'not json',
-      stderr: async () => '',
-    });
-
-    await expect(
-      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
-    ).rejects.toThrow('Saída inesperada do script de afiliado');
-  });
-
-  it('retorna produto da Shopee com marketplace correto quando o script termina com sucesso', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 0,
-      stdout: async () =>
-        `${JSON.stringify({
-          title: 'Fone Bluetooth Shopee',
-          price: 59.9,
-          imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
-          marketplace: 'shopee',
-          affiliateLink: 'https://s.shopee.com.br/abc123',
-        })}\n`,
-      stderr: async () => '',
-    });
-
-    const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
-
-    expect(result).toEqual({
-      product: {
-        title: 'Fone Bluetooth Shopee',
-        price: 59.9,
-        imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
-        marketplace: 'shopee',
-      },
-      affiliateLink: 'https://s.shopee.com.br/abc123',
-    });
-  });
-
   it('lança erro quando o script reporta SHOPEE_CREDENTIALS_MISSING no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'SHOPEE_CREDENTIALS_MISSING',
-    });
+    mockExecFileFailure('SHOPEE_CREDENTIALS_MISSING');
 
     await expect(
       fetchProductAndAffiliateLink('https://shopee.com.br/produto-x'),
@@ -172,69 +106,86 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança erro quando o script reporta SHOPEE_API_ERROR no stderr', async () => {
-    runCommandMock.mockResolvedValue({
-      exitCode: 1,
-      stdout: async () => '',
-      stderr: async () => 'SHOPEE_API_ERROR ({"message":"invalid signature"})',
-    });
+    mockExecFileFailure('SHOPEE_API_ERROR ({"message":"invalid signature"})');
 
     await expect(
       fetchProductAndAffiliateLink('https://shopee.com.br/produto-x'),
     ).rejects.toThrow('Falha ao gerar link de afiliado da Shopee');
   });
 
-  it('passa SHOPEE_APP_ID e SHOPEE_SECRET_KEY como env vars pro comando da sandbox', async () => {
+  it('lança erro genérico quando o script falha por outro motivo', async () => {
+    mockExecFileFailure('TimeoutError: locator not found');
+
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('Falha ao gerar link de afiliado');
+  });
+
+  it('lança erro quando a saída não é um JSON válido', async () => {
+    mockExecFileSuccess('not json');
+
+    await expect(
+      fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
+    ).rejects.toThrow('Saída inesperada do script de afiliado');
+  });
+
+  it('retorna produto da Shopee com marketplace correto quando o script termina com sucesso', async () => {
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Fone Bluetooth Shopee',
+        price: 59.9,
+        imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
+        marketplace: 'shopee',
+        affiliateLink: 'https://s.shopee.com.br/abc123',
+      })}\n`,
+    );
+
+    const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
+
+    expect(result.product.marketplace).toBe('shopee');
+  });
+
+  it('passa SHOPEE_APP_ID e SHOPEE_SECRET_KEY como env vars pro processo filho', async () => {
     vi.stubEnv('SHOPEE_APP_ID', 'app123');
     vi.stubEnv('SHOPEE_SECRET_KEY', 'secret456');
-    runCommandMock.mockResolvedValue({
-      exitCode: 0,
-      stdout: async () =>
-        `${JSON.stringify({
-          title: 'Produto',
-          price: 10,
-          imageUrl: 'https://x.com/img.jpg',
-          marketplace: 'shopee',
-          affiliateLink: 'https://s.shopee.com.br/x',
-        })}\n`,
-      stderr: async () => '',
-    });
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Produto',
+        price: 10,
+        imageUrl: 'https://x.com/img.jpg',
+        marketplace: 'shopee',
+        affiliateLink: 'https://s.shopee.com.br/x',
+      })}\n`,
+    );
 
     await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
 
-    expect(runCommandMock).toHaveBeenCalledWith(
+    expect(execFileMock).toHaveBeenCalledWith(
+      'node',
+      expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({ SHOPEE_APP_ID: 'app123', SHOPEE_SECRET_KEY: 'secret456' }),
       }),
+      expect.any(Function),
     );
   });
 
   it('processa um link da Shopee normalmente mesmo quando loadSession (sessão do Mercado Livre) falha', async () => {
     const { loadSession } = await import('../session/sessionStore');
-    vi.mocked(loadSession).mockRejectedValueOnce(new Error('ML_SESSION_BLOB_URL não configurada'));
+    vi.mocked(loadSession).mockRejectedValueOnce(new Error('Arquivo de sessão do Mercado Livre não encontrado'));
 
-    runCommandMock.mockResolvedValue({
-      exitCode: 0,
-      stdout: async () =>
-        `${JSON.stringify({
-          title: 'Fone Bluetooth Shopee',
-          price: 59.9,
-          imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
-          marketplace: 'shopee',
-          affiliateLink: 'https://s.shopee.com.br/abc123',
-        })}\n`,
-      stderr: async () => '',
-    });
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Fone Bluetooth Shopee',
+        price: 59.9,
+        imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
+        marketplace: 'shopee',
+        affiliateLink: 'https://s.shopee.com.br/abc123',
+      })}\n`,
+    );
 
     const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
 
     expect(result.product.marketplace).toBe('shopee');
-    expect(writeFilesMock).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: '/vercel/sandbox/session.json',
-          content: Buffer.from(JSON.stringify({ cookies: [], origins: [] })),
-        }),
-      ]),
-    );
   });
 });

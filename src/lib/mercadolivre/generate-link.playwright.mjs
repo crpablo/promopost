@@ -1,5 +1,5 @@
-// Roda DENTRO da Vercel Sandbox (node generate-link.mjs <link-produto>).
-// Usa a sessão salva em /vercel/sandbox/session.json (storageState do Playwright).
+// Roda como processo filho local da aplicação (node generate-link.mjs <link-produto>).
+// Usa a sessão salva no caminho apontado por ML_SESSION_PATH (storageState do Playwright).
 //
 // Faz três coisas na mesma sessão de browser:
 //   0. Navega até o link recebido e segue qualquer redirect (HTTP normal ou
@@ -25,10 +25,10 @@
 // navigator.webdriver e passa --disable-blink-features=AutomationControlled.
 // Sem isso, TODA navegação falha, não só a do link builder.
 //
-// --no-sandbox e --disable-setuid-sandbox são necessários porque o usuário
-// vercel-sandbox não tem privilégio de kernel pro sandbox interno do próprio
-// Chromium; sem essas flags o browser fecha sozinho logo após abrir
-// ("Target page, context or browser has been closed").
+// --no-sandbox e --disable-setuid-sandbox continuam necessários mesmo fora da
+// Vercel Sandbox: sem privilégio de kernel pro sandbox interno do próprio
+// Chromium (comum em containers Docker), o browser fecha sozinho logo após
+// abrir ("Target page, context or browser has been closed").
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -54,7 +54,7 @@ async function main() {
     process.exit(1);
   }
 
-  const storageState = JSON.parse(readFileSync('/vercel/sandbox/session.json', 'utf8'));
+  const storageState = JSON.parse(readFileSync(process.env.ML_SESSION_PATH, 'utf8'));
 
   const browser = await chromium.launch({
     args: [

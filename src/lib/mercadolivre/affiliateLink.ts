@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Sandbox } from '@vercel/sandbox';
-import ms from 'ms';
 import { InvalidLinkError, ProductNotFoundError, SessionExpiredError } from '../pipeline';
 import { loadSession } from '../session/sessionStore';
 import type { Product } from '../marketplace/types';
@@ -11,81 +12,38 @@ export interface AffiliateResult {
   affiliateLink: string;
 }
 
-const SANDBOX_NAME = 'promopost-ml-affiliate';
 const SCRIPT_PATH = fileURLToPath(new URL('./generate-link.playwright.mjs', import.meta.url));
+const EMPTY_STORAGE_STATE = Buffer.from(JSON.stringify({ cookies: [], origins: [] }));
+const EXEC_TIMEOUT_MS = 4 * 60 * 1000;
 
-async function getSandbox() {
-  return Sandbox.getOrCreate({
-    name: SANDBOX_NAME,
-    runtime: 'node24',
-    timeout: ms('4m'),
-    onCreate: async (sbx) => {
-      const npmInstall = await sbx.runCommand({
-        cmd: 'npm',
-        args: ['install', 'playwright'],
-        cwd: '/vercel/sandbox',
-      });
-      if (npmInstall.exitCode !== 0) {
-        throw new Error(`Falha ao instalar playwright na sandbox: ${(await npmInstall.stderr()).slice(0, 500)}`);
-      }
-
-      const browserInstall = await sbx.runCommand({
-        cmd: 'npx',
-        args: ['playwright', 'install', 'chromium', 'chromium-headless-shell'],
-        cwd: '/vercel/sandbox',
-      });
-      if (browserInstall.exitCode !== 0) {
-        throw new Error(`Falha ao baixar o Chromium na sandbox: ${(await browserInstall.stderr()).slice(0, 500)}`);
-      }
-
-      // `playwright install-deps` só suporta apt/Debian — a sandbox roda
-      // Amazon Linux (dnf) — então instalamos as libs de sistema do Chromium
-      // manualmente. Sem isso o Chromium abre e fecha na hora
-      // ("libnspr4.so: cannot open shared object file").
-      const depsInstall = await sbx.runCommand({
-        cmd: 'dnf',
-        args: [
-          'install',
-          '-y',
-          'nss',
-          'nspr',
-          'atk',
-          'cups-libs',
-          'libdrm',
-          'libxkbcommon',
-          'at-spi2-atk',
-          'libXcomposite',
-          'libXdamage',
-          'libXext',
-          'libXfixes',
-          'libXrandr',
-          'mesa-libgbm',
-          'pango',
-          'cairo',
-          'alsa-lib',
-          'gtk3',
-        ],
-        sudo: true,
-      });
-      if (depsInstall.exitCode !== 0) {
-        throw new Error(
-          `Falha ao instalar dependências de sistema do Chromium: ${(await depsInstall.stderr()).slice(0, 500)}`,
-        );
-      }
-    },
+function runScript(
+  productLink: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ stdout: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'node',
+      [SCRIPT_PATH, productLink],
+      { timeout: EXEC_TIMEOUT_MS, env },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(Object.assign(err, { stderr: stderr ?? '' }));
+          return;
+        }
+        resolve({ stdout: stdout ?? '' });
+      },
+    );
   });
 }
-
-const EMPTY_STORAGE_STATE = Buffer.from(JSON.stringify({ cookies: [], origins: [] }));
 
 export async function fetchProductAndAffiliateLink(productLink: string): Promise<AffiliateResult> {
   // A Shopee não usa sessão logada (a API de afiliados usa credenciais fixas
   // via env var) — carregar a sessão do Mercado Livre não pode ser um
   // pré-requisito rígido pra esse fluxo. Se a sessão do ML não estiver
-  // configurada ou o Blob falhar, seguimos com um storageState vazio: o
-  // fluxo Mercado Livre continua falhando (com SESSION_EXPIRED, dentro do
-  // script, quando o formulário do linkbuilder não aparecer) do jeito que já
-  // falhava hoje, e o fluxo Shopee fica inteiramente livre dessa dependência.
+  // configurada, seguimos com um storageState vazio: o fluxo Mercado Livre
+  // continua falhando (com SESSION_EXPIRED, dentro do script, quando o
+  // formulário do linkbuilder não aparecer) do jeito que já falhava hoje, e
+  // o fluxo Shopee fica inteiramente livre dessa dependência.
   let sessionBuffer: Buffer;
   try {
     sessionBuffer = await loadSession();
@@ -93,27 +51,22 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     console.warn('Falha ao carregar sessão do Mercado Livre, seguindo com storageState vazio:', err);
     sessionBuffer = EMPTY_STORAGE_STATE;
   }
-  const scriptContent = readFileSync(SCRIPT_PATH);
 
-  const sandbox = await getSandbox();
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'promopost-ml-session-'));
+  const sessionPath = path.join(tempDir, 'session.json');
+  await writeFile(sessionPath, sessionBuffer);
 
-  await sandbox.writeFiles([
-    { path: '/vercel/sandbox/session.json', content: sessionBuffer },
-    { path: '/vercel/sandbox/generate-link.mjs', content: scriptContent },
-  ]);
-
-  const result = await sandbox.runCommand({
-    cmd: 'node',
-    args: ['generate-link.mjs', productLink],
-    cwd: '/vercel/sandbox',
-    env: {
+  let stdout: string;
+  try {
+    const result = await runScript(productLink, {
+      ...process.env,
+      ML_SESSION_PATH: sessionPath,
       SHOPEE_APP_ID: process.env.SHOPEE_APP_ID ?? '',
       SHOPEE_SECRET_KEY: process.env.SHOPEE_SECRET_KEY ?? '',
-    },
-  });
-
-  if (result.exitCode !== 0) {
-    const stderr = await result.stderr();
+    });
+    stdout = result.stdout;
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr ?? (err as Error).message ?? '';
     if (stderr.includes('SESSION_EXPIRED')) {
       throw new SessionExpiredError();
     }
@@ -135,9 +88,11 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
       throw new Error(`Falha ao gerar link de afiliado da Shopee: ${stderr.slice(0, 300)}`);
     }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
 
-  const stdout = (await result.stdout()).trim();
+  const trimmed = stdout.trim();
   let parsed: {
     title?: unknown;
     price?: unknown;
@@ -146,9 +101,9 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     affiliateLink?: unknown;
   };
   try {
-    parsed = JSON.parse(stdout);
+    parsed = JSON.parse(trimmed);
   } catch {
-    throw new Error(`Saída inesperada do script de afiliado: ${stdout.slice(0, 200)}`);
+    throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
   }
 
   if (
@@ -158,7 +113,7 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     typeof parsed.affiliateLink !== 'string' ||
     !parsed.affiliateLink.startsWith('http')
   ) {
-    throw new Error(`Saída inesperada do script de afiliado: ${stdout.slice(0, 200)}`);
+    throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
   }
 
   const marketplace = parsed.marketplace === 'shopee' ? 'shopee' : 'mercadolivre';
