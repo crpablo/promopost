@@ -66,7 +66,7 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     });
     stdout = result.stdout;
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr ?? (err as Error).message ?? '';
+    const stderr = (err as { stderr?: string }).stderr || (err as Error).message || '';
     if (stderr.includes('SESSION_EXPIRED')) {
       throw new SessionExpiredError();
     }

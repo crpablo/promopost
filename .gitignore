@@ -9,3 +9,7 @@ next-env.d.ts
 .vercel
 .env*
 .superpowers/
+data/
+backups/
+ml-session.json
+telegram-session.txt
