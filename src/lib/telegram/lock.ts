@@ -1,6 +1,6 @@
-import { del, head, put } from '@vercel/blob';
+import { deleteFile, fileAgeMs, writeTextFile } from '../storage/localStore';
 
-const LOCK_PATHNAME = 'telegram-poll.lock';
+const LOCK_FILENAME = 'telegram-poll.lock';
 
 // Mesmo teto do maxDuration da rota — um lock mais velho que isso só pode
 // ser de uma execução travada/morta, não de uma execução legítima em
@@ -14,29 +14,15 @@ const LOCK_STALE_MS = 5 * 60 * 1000;
  * já existir um lock válido (não expirado) de outra execução.
  */
 export async function acquireLock(): Promise<boolean> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-
-  try {
-    const existing = await head(LOCK_PATHNAME, { token });
-    const ageMs = Date.now() - existing.uploadedAt.getTime();
-    if (ageMs < LOCK_STALE_MS) {
-      return false;
-    }
-  } catch {
-    // Sem lock existente (ou erro ao consultar) — segue pra travar.
+  const ageMs = await fileAgeMs(LOCK_FILENAME);
+  if (ageMs !== null && ageMs < LOCK_STALE_MS) {
+    return false;
   }
 
-  await put(LOCK_PATHNAME, String(Date.now()), {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'text/plain',
-    token,
-  });
+  await writeTextFile(LOCK_FILENAME, String(Date.now()));
   return true;
 }
 
 export async function releaseLock(): Promise<void> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  await del(LOCK_PATHNAME, { token }).catch(() => {});
+  await deleteFile(LOCK_FILENAME).catch(() => {});
 }
