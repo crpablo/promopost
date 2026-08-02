@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // Rodar localmente UMA VEZ (ou sempre que a sessão do Telegram expirar):
-//   TELEGRAM_API_ID=xxx TELEGRAM_API_HASH=xxx BLOB_READ_WRITE_TOKEN=xxx node scripts/bootstrap-telegram-session.mjs
+//   TELEGRAM_API_ID=xxx TELEGRAM_API_HASH=xxx node scripts/bootstrap-telegram-session.mjs
 //
 // TELEGRAM_API_ID e TELEGRAM_API_HASH vêm de https://my.telegram.org (Apps).
 //
 // Loga interativamente (telefone + código SMS + senha de duas etapas, se
 // houver) usando a API oficial de cliente do Telegram (GramJS/MTProto) —
 // use uma conta secundária dedicada, não sua conta pessoal principal.
-// Salva a sessão resultante no Vercel Blob e lista os chats (dialogs) da
-// conta pra você identificar o ID do grupo/canal alvo.
+// Salva a sessão resultante em ./telegram-session.txt e lista os chats
+// (dialogs) da conta pra você identificar o ID do grupo/canal alvo.
 
+import { writeFile } from 'node:fs/promises';
 import { TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions/index.js';
 import input from 'input';
-import { put } from '@vercel/blob';
 
 async function main() {
   const apiId = Number(process.env.TELEGRAM_API_ID);
@@ -22,10 +22,6 @@ async function main() {
     console.error(
       'Defina TELEGRAM_API_ID e TELEGRAM_API_HASH antes de rodar (pegue em https://my.telegram.org).',
     );
-    process.exit(1);
-  }
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error('Defina BLOB_READ_WRITE_TOKEN antes de rodar este script.');
     process.exit(1);
   }
 
@@ -43,24 +39,17 @@ async function main() {
   });
 
   const sessionString = client.session.save();
+  await writeFile('telegram-session.txt', sessionString);
 
-  const blob = await put('telegram-session.txt', sessionString, {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'text/plain',
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-
-  console.log('\nSessão salva.');
-  console.log('Configure na Vercel: TELEGRAM_SESSION_BLOB_URL =', blob.url);
+  console.log('\nSessão salva em ./telegram-session.txt.');
+  console.log('Copie pro VPS: scp telegram-session.txt usuario@vps:/opt/promopost/data/telegram-session.txt');
 
   console.log('\nChats desta conta (pra identificar o ID do grupo/canal alvo):');
   const dialogs = await client.getDialogs({ limit: 50 });
   for (const dialog of dialogs) {
     console.log(`  ${dialog.id} — ${dialog.title ?? dialog.name ?? '(sem título)'}`);
   }
-  console.log('\nConfigure na Vercel: TELEGRAM_TARGET_CHAT_ID = <ID do chat listado acima>');
+  console.log('\nConfigure no .env do VPS: TELEGRAM_TARGET_CHAT_ID = <ID do chat listado acima>');
 
   await client.disconnect();
 }
