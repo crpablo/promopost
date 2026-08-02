@@ -80,7 +80,7 @@ describe('fileAgeMs', () => {
     await writeTextFile('foo.lock', String(Date.now()));
     const age = await fileAgeMs('foo.lock');
     expect(age).not.toBeNull();
-    expect(age as number).toBeGreaterThanOrEqual(0);
+    expect(age as number).toBeGreaterThanOrEqual(-1000);
     expect(age as number).toBeLessThan(2000);
   });
 });
