@@ -63,6 +63,7 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
       ML_SESSION_PATH: sessionPath,
       SHOPEE_APP_ID: process.env.SHOPEE_APP_ID ?? '',
       SHOPEE_SECRET_KEY: process.env.SHOPEE_SECRET_KEY ?? '',
+      AMAZON_ASSOCIATE_TAG: process.env.AMAZON_ASSOCIATE_TAG ?? '',
     });
     stdout = result.stdout;
   } catch (err) {
@@ -86,6 +87,9 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     }
     if (stderr.includes('SHOPEE_API_ERROR')) {
       throw new Error(`Falha ao gerar link de afiliado da Shopee: ${stderr.slice(0, 300)}`);
+    }
+    if (stderr.includes('AMAZON_CREDENTIALS_MISSING')) {
+      throw new Error('Variáveis de ambiente da Amazon ausentes: AMAZON_ASSOCIATE_TAG');
     }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   } finally {
@@ -116,7 +120,8 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
   }
 
-  const marketplace = parsed.marketplace === 'shopee' ? 'shopee' : 'mercadolivre';
+  const marketplace =
+    parsed.marketplace === 'shopee' ? 'shopee' : parsed.marketplace === 'amazon' ? 'amazon' : 'mercadolivre';
 
   return {
     product: { title: parsed.title, price: parsed.price, imageUrl: parsed.imageUrl, marketplace },

@@ -188,4 +188,52 @@ describe('fetchProductAndAffiliateLink', () => {
 
     expect(result.product.marketplace).toBe('shopee');
   });
+
+  it('retorna produto da Amazon com marketplace correto quando o script termina com sucesso', async () => {
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Fone Bluetooth Amazon',
+        price: 129.9,
+        imageUrl: 'https://m.media-amazon.com/images/I/abc.jpg',
+        marketplace: 'amazon',
+        affiliateLink: 'https://www.amazon.com.br/dp/B08XYZ?tag=crpablo0d-20',
+      })}\n`,
+    );
+
+    const result = await fetchProductAndAffiliateLink('https://www.amazon.com.br/dp/B08XYZ');
+
+    expect(result.product.marketplace).toBe('amazon');
+  });
+
+  it('lança erro quando o script reporta AMAZON_CREDENTIALS_MISSING no stderr', async () => {
+    mockExecFileFailure('AMAZON_CREDENTIALS_MISSING');
+
+    await expect(
+      fetchProductAndAffiliateLink('https://www.amazon.com.br/dp/B08XYZ'),
+    ).rejects.toThrow('Variáveis de ambiente da Amazon ausentes');
+  });
+
+  it('passa AMAZON_ASSOCIATE_TAG como env var pro processo filho', async () => {
+    vi.stubEnv('AMAZON_ASSOCIATE_TAG', 'crpablo0d-20');
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Produto',
+        price: 10,
+        imageUrl: 'https://m.media-amazon.com/images/I/x.jpg',
+        marketplace: 'amazon',
+        affiliateLink: 'https://www.amazon.com.br/dp/X?tag=crpablo0d-20',
+      })}\n`,
+    );
+
+    await fetchProductAndAffiliateLink('https://www.amazon.com.br/dp/X');
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      'node',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({ AMAZON_ASSOCIATE_TAG: 'crpablo0d-20' }),
+      }),
+      expect.any(Function),
+    );
+  });
 });
