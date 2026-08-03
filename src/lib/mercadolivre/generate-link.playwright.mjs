@@ -111,6 +111,7 @@ async function main() {
     const isMercadoLivre =
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
     const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
+    const isAmazon = /(^|\.)amazon\.com\.br$/i.test(resolvedHost);
 
     // Checa as credenciais da Shopee assim que sabemos que é Shopee (logo
     // após o redirect ser resolvido), antes de gastar tempo de Sandbox e
@@ -127,7 +128,20 @@ async function main() {
       }
     }
 
-    if (!isMercadoLivre && !isShopee) {
+    // Checa a credencial da Amazon assim que sabemos que é Amazon (o
+    // Associate Tag não é secreto, mas sem ele o link gerado não dá
+    // comissão nenhuma pro afiliado — falha explícita é melhor que gerar
+    // um link "funcional" só que sem crédito).
+    let amazonTag;
+    if (isAmazon) {
+      amazonTag = process.env.AMAZON_ASSOCIATE_TAG;
+      if (!amazonTag) {
+        console.error('AMAZON_CREDENTIALS_MISSING');
+        process.exit(1);
+      }
+    }
+
+    if (!isMercadoLivre && !isShopee && !isAmazon) {
       console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
       process.exit(1);
     }
@@ -160,15 +174,17 @@ async function main() {
     }
 
     // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
-    // padrão de meta tags pros dois marketplaces (Open Graph + itemprop).
+    // padrão de meta tags pros marketplaces, com seletor específico da
+    // Amazon pro preço (ver parseBrazilianPrice, no topo do arquivo).
     let title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
-    if (!title && isShopee) {
-      // Páginas de produto da Shopee frequentemente não expõem o nome do
-      // produto num <h1> — cai pro og:title, mesmo padrão de .getAttribute
-      // já usado abaixo pra imageUrl/priceMeta. Restrito à Shopee pra não
-      // mudar o comportamento do Mercado Livre (que já funciona com h1) —
-      // uma página de erro/interstitial do ML sem h1 mas com og:title
-      // continuaria corretamente caindo em PRODUCT_NOT_FOUND.
+    if (!title && (isShopee || isAmazon)) {
+      // Páginas de produto da Shopee e da Amazon frequentemente não expõem
+      // o nome do produto de forma confiável só via h1 — cai pro og:title,
+      // mesmo padrão de .getAttribute já usado abaixo pra imageUrl/preço.
+      // Restrito a Shopee/Amazon pra não mudar o comportamento do Mercado
+      // Livre (que já funciona com h1) — uma página de erro/interstitial
+      // do ML sem h1 mas com og:title continuaria corretamente caindo em
+      // PRODUCT_NOT_FOUND.
       title = await page
         .locator('meta[property="og:title"]')
         .first()
@@ -176,12 +192,30 @@ async function main() {
         .catch(() => null);
     }
 
-    const priceMeta = await page
-      .locator('meta[itemprop="price"], meta[property="product:price:amount"]')
-      .first()
-      .getAttribute('content')
-      .catch(() => null);
-    const price = priceMeta ? Number.parseFloat(priceMeta) : NaN;
+    let priceRaw = null;
+    let price = NaN;
+    if (isAmazon) {
+      // A Amazon não expõe meta tag de preço confiável — o valor formatado
+      // fica num elemento visual/acessível (".a-price .a-offscreen"), ex:
+      // "R$ 1.234,56".
+      priceRaw = await page
+        .locator('.a-price .a-offscreen')
+        .first()
+        .innerText({ timeout: 10000 })
+        .catch(() => null);
+      price = parseBrazilianPrice(priceRaw);
+    }
+    if (Number.isNaN(price)) {
+      // Fallback pras mesmas meta tags dos outros marketplaces — cobre
+      // Mercado Livre/Shopee sempre, e a Amazon só se o seletor acima não
+      // achar nada (layout diferente, produto sem preço visível, etc).
+      priceRaw = await page
+        .locator('meta[itemprop="price"], meta[property="product:price:amount"]')
+        .first()
+        .getAttribute('content')
+        .catch(() => null);
+      price = priceRaw ? Number.parseFloat(priceRaw) : NaN;
+    }
 
     const imageUrl = await page
       .locator('meta[property="og:image"]')
@@ -191,7 +225,7 @@ async function main() {
 
     if (!title || Number.isNaN(price) || !imageUrl) {
       console.error(
-        `PRODUCT_NOT_FOUND (title=${JSON.stringify(title)}, price=${priceMeta}, imageUrl=${JSON.stringify(imageUrl)})`,
+        `PRODUCT_NOT_FOUND (title=${JSON.stringify(title)}, price=${priceRaw}, imageUrl=${JSON.stringify(imageUrl)})`,
       );
       process.exit(1);
     }
@@ -243,6 +277,14 @@ async function main() {
       }
 
       console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'shopee', affiliateLink }));
+      return;
+    }
+
+    if (isAmazon) {
+      // 2 (Amazon). Sem API, sem sessão — só garante o parâmetro de
+      // afiliado na própria URL resolvida do produto.
+      const affiliateLink = buildAmazonAffiliateLink(resolvedUrl, amazonTag);
+      console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'amazon', affiliateLink }));
       return;
     }
 
