@@ -195,7 +195,18 @@ async function main() {
     // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
     // padrão de meta tags pros marketplaces, com seletor específico da
     // Amazon pro preço (ver parseBrazilianPrice, no topo do arquivo).
-    let title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
+    let title = null;
+    if (isAmazon) {
+      // A página de produto da Amazon tem vários elementos <h1> (incluindo
+      // texto de acessibilidade tipo "resumo do produto... atalho do
+      // teclado" antes do título real) — pegar o primeiro h1 pega o texto
+      // errado. O título fica de forma confiável em #productTitle
+      // (confirmado em validação manual real, 2026-08-03).
+      title = await page.locator('#productTitle').first().innerText({ timeout: 10000 }).catch(() => null);
+    }
+    if (!title) {
+      title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
+    }
     if (!title && (isShopee || isAmazon)) {
       // Páginas de produto da Shopee e da Amazon frequentemente não expõem
       // o nome do produto de forma confiável só via h1 — cai pro og:title,
@@ -236,11 +247,25 @@ async function main() {
       price = priceRaw ? Number.parseFloat(priceRaw) : NaN;
     }
 
-    const imageUrl = await page
-      .locator('meta[property="og:image"]')
-      .first()
-      .getAttribute('content')
-      .catch(() => null);
+    let imageUrl = null;
+    if (isAmazon) {
+      // A Amazon não expõe og:image de forma confiável — a imagem
+      // principal do produto fica no elemento #landingImage.
+      // data-old-hires traz a versão em resolução mais alta; src é o
+      // fallback (resolução menor, mas sempre presente quando a imagem
+      // carrega) (confirmado em validação manual real, 2026-08-03).
+      imageUrl = await page.locator('#landingImage').first().getAttribute('data-old-hires').catch(() => null);
+      if (!imageUrl) {
+        imageUrl = await page.locator('#landingImage').first().getAttribute('src').catch(() => null);
+      }
+    }
+    if (!imageUrl) {
+      imageUrl = await page
+        .locator('meta[property="og:image"]')
+        .first()
+        .getAttribute('content')
+        .catch(() => null);
+    }
 
     if (!title || Number.isNaN(price) || !imageUrl) {
       console.error(
