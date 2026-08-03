@@ -227,12 +227,24 @@ async function main() {
     if (isAmazon) {
       // A Amazon não expõe meta tag de preço confiável — o valor formatado
       // fica num elemento visual/acessível (".a-price .a-offscreen"), ex:
-      // "R$ 1.234,56".
+      // "R$ 1.234,56". A página tem vários desses elementos (preço de
+      // outras ofertas/variações, elementos de template vazios) — o
+      // primeiro `.a-price .a-offscreen` da página às vezes vem vazio
+      // (confirmado em validação manual real, 2026-08-03), então prioriza
+      // o escopado dentro de #corePrice_feature_div (o preço "oficial" da
+      // buybox) antes do seletor genérico.
       priceRaw = await page
-        .locator('.a-price .a-offscreen')
+        .locator('#corePrice_feature_div .a-offscreen')
         .first()
         .innerText({ timeout: 10000 })
         .catch(() => null);
+      if (!priceRaw) {
+        priceRaw = await page
+          .locator('.a-price .a-offscreen')
+          .first()
+          .innerText({ timeout: 10000 })
+          .catch(() => null);
+      }
       price = parseBrazilianPrice(priceRaw);
     }
     if (Number.isNaN(price)) {
