@@ -173,6 +173,25 @@ async function main() {
       }
     }
 
+    if (isAmazon) {
+      // 0.7. A Amazon costuma interpor uma página de confirmação "Continuar
+      // comprando" (bot-check simples) na primeira navegação de uma sessão
+      // de browser nova — mesmo em acesso direto à URL do produto, sem
+      // encurtador envolvido (confirmado em validação manual real,
+      // 2026-08-03). Clicar no botão não leva pro produto (redireciona pra
+      // home), mas deixa um cookie de sessão que libera a navegação
+      // seguinte — então clica e re-navega pra mesma URL resolvida antes de
+      // tentar extrair título/preço.
+      const continuarComprandoBtn = page.getByRole('button', { name: /continuar comprando/i }).first();
+      const hasInterstitial = await continuarComprandoBtn.count().catch(() => 0);
+      if (hasInterstitial) {
+        await continuarComprandoBtn.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        await page.goto(resolvedUrl, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
+    }
+
     // 1. Dados do produto (já estamos na página, resolvida acima) — mesmo
     // padrão de meta tags pros marketplaces, com seletor específico da
     // Amazon pro preço (ver parseBrazilianPrice, no topo do arquivo).
