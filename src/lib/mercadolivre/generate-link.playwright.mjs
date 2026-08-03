@@ -46,6 +46,27 @@ export function calculateShopeeSignature(appId, timestamp, payload, secret) {
     .digest('hex');
 }
 
+// Converte o texto formatado do preço da Amazon (ex: "R$ 1.234,56", com
+// separador de milhar "." e decimal ",") pra número. Remove tudo que não
+// for dígito/vírgula/ponto/sinal, remove pontos de milhar, troca vírgula
+// decimal por ponto. Retorna NaN se não sobrar nada numérico (inclui o
+// caso de `text` ser null).
+export function parseBrazilianPrice(text) {
+  if (!text) return NaN;
+  const cleaned = text.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  return Number.parseFloat(cleaned);
+}
+
+// Gera o link de afiliado da Amazon sem nenhuma chamada de rede — só
+// adiciona (ou sobrescreve, se já existir) o parâmetro `tag` na própria
+// URL resolvida do produto. Extraída como função pura pra ser testável
+// isoladamente, mesmo padrão já usado pra calculateShopeeSignature.
+export function buildAmazonAffiliateLink(url, tag) {
+  const parsed = new URL(url);
+  parsed.searchParams.set('tag', tag);
+  return parsed.toString();
+}
+
 async function main() {
   const [, , productLink] = process.argv;
 
