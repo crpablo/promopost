@@ -1,6 +1,11 @@
 import sharp from 'sharp';
 
-const ALLOWED_IMAGE_HOSTS = [/(^|\.)mlstatic\.com$/i, /(^|\.)susercontent\.com$/i];
+const ALLOWED_IMAGE_HOSTS = [
+  /(^|\.)mlstatic\.com$/i,
+  /(^|\.)susercontent\.com$/i,
+  /(^|\.)media-amazon\.com$/i,
+  /(^|\.)ssl-images-amazon\.com$/i,
+];
 
 function isAllowedImageHost(url: string): boolean {
   try {

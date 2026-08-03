@@ -69,6 +69,30 @@ describe('GET /api/tiktok-image-proxy', () => {
     expect(body).toEqual(JPEG_OUTPUT_BYTES);
   });
 
+  it('busca e normaliza imagem de host media-amazon.com (Amazon) sem cair no erro de host não permitido', async () => {
+    const imageBytes = new Uint8Array([1, 2, 3, 4]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/webp' }),
+        arrayBuffer: async () => imageBytes.buffer,
+      }),
+    );
+    toBufferMock.mockResolvedValue(Buffer.from(JPEG_OUTPUT_BYTES));
+
+    const request = new Request(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=' +
+        encodeURIComponent('https://m.media-amazon.com/images/I/abc.jpg'),
+    );
+    const response = await GET(request);
+    const body = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(body).toEqual(JPEG_OUTPUT_BYTES);
+  });
+
   it('retorna 502 quando a normalização para JPEG falha', async () => {
     const imageBytes = new Uint8Array([1, 2, 3, 4]);
     vi.stubGlobal(
