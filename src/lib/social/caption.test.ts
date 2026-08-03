@@ -67,4 +67,14 @@ describe('buildSocialCaption', () => {
       'Produto Z\n\n🏷️ R$50,00\n\n🔗 Confira: https://meli.la/xyz (também no link da bio)\n\n#promocao #oferta #mercadolivre #desconto',
     );
   });
+
+  it('usa #amazon na legenda quando o produto vem da Amazon', () => {
+    const text = buildSocialCaption(
+      { title: 'Produto W', price: 129.9, imageUrl: 'https://x.com/img.jpg', marketplace: 'amazon' },
+      'https://www.amazon.com.br/dp/B08XYZ?tag=crpablo0d-20',
+    );
+    expect(text).toBe(
+      'Produto W\n\n🏷️ R$129,90\n\n🔗 Confira: https://www.amazon.com.br/dp/B08XYZ?tag=crpablo0d-20 (também no link da bio)\n\n#promocao #oferta #amazon #desconto',
+    );
+  });
 });

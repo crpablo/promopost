@@ -8,7 +8,8 @@ function formatPrice(value: number): string {
 }
 
 function buildHashtags(marketplace: Product['marketplace']): string {
-  const marketplaceTag = marketplace === 'shopee' ? '#shopee' : '#mercadolivre';
+  const marketplaceTags: Record<string, string> = { shopee: '#shopee', amazon: '#amazon' };
+  const marketplaceTag = marketplaceTags[marketplace ?? ''] ?? '#mercadolivre';
   return `#promocao #oferta ${marketplaceTag} #desconto`;
 }
 
