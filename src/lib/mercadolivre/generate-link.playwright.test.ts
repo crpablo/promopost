@@ -46,7 +46,7 @@ describe('parseBrazilianPrice', () => {
   });
 
   it('lida com espaço não-quebrável entre "R$" e o valor', () => {
-    expect(parseBrazilianPrice('R$ 149,00')).toBe(149);
+    expect(parseBrazilianPrice('R$ 149,00')).toBe(149);
   });
 
   it('retorna NaN quando o texto é null', () => {

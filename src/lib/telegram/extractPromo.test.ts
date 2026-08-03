@@ -103,4 +103,31 @@ describe('extractPromo', () => {
       discountedPrice: 45.5,
     });
   });
+
+  it('extrai link, cupom e preço com desconto de uma promo da Amazon', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.amazon.com.br/dp/B08XYZ',
+        coupon: 'AMAZON15',
+        discountedPrice: 79.9,
+      },
+    });
+
+    const result = await extractPromo(
+      'Fritadeira Elétrica Sem Óleo\nDe R$149,90 por R$79,90\nCupom: AMAZON15\nhttps://www.amazon.com.br/dp/B08XYZ',
+    );
+
+    expect(result).toEqual({
+      isPromo: true,
+      link: 'https://www.amazon.com.br/dp/B08XYZ',
+      coupon: 'AMAZON15',
+      discountedPrice: 79.9,
+    });
+    expect(generateObjectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('Fritadeira Elétrica Sem Óleo'),
+      }),
+    );
+  });
 });
