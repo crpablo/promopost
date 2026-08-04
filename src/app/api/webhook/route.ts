@@ -94,7 +94,7 @@ async function postToSocialNetworks(
   // Facebook, Instagram (feed) e TikTok reaproveitam a mesma legenda — só
   // monta ela se pelo menos uma dessas três redes estiver configurada.
   let caption: string | undefined;
-  let captionError: SocialResult | undefined;
+  let captionError: { ok: false; error: string } | undefined;
   if (isMetaConfigured() || isTikTokConfigured() || isTelegramGroupsConfigured()) {
     try {
       caption = buildSocialCaption(product, affiliateLink, coupon, discountedPrice);
@@ -144,8 +144,13 @@ async function postToSocialNetworks(
 
   const telegramPromise: Promise<TelegramGroupsResult> = (async () => {
     if (!isTelegramGroupsConfigured()) return { ok: false, results: [] };
-    if (captionError) return { ok: false, results: [] };
-    return postToTelegramGroups(product.imageUrl, caption as string);
+    if (captionError) return { ok: false, results: [], error: captionError.error };
+    try {
+      return await postToTelegramGroups(product.imageUrl, caption as string);
+    } catch (err) {
+      console.error('Erro ao disparar pros grupos do Telegram:', err);
+      return { ok: false, results: [], error: toErrorMessage(err) };
+    }
   })();
 
   const [facebook, instagram, story, tiktok, telegram] = await Promise.all([

@@ -116,6 +116,7 @@ describe('POST /api/webhook', () => {
     stubMetaEnv();
     stubWebhookBaseUrl();
     stubTikTokEnv();
+    stubTelegramGroupsEnv();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
     vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
@@ -143,8 +144,42 @@ describe('POST /api/webhook', () => {
       instagram: { ok: false, error: 'Imagem inválida' },
       story: { ok: false, error: 'Story indisponível' },
       tiktok: { ok: false, error: 'Token do TikTok expirado' },
-      telegram: { ok: false, results: [] },
+      telegram: { ok: false, results: [], error: 'Sessão do Telegram expirada' },
     });
+  });
+
+  it('monta a legenda e posta só no Telegram quando apenas ele está configurado (Meta e TikTok ausentes)', async () => {
+    stubTelegramGroupsEnv();
+    stubWebhookBaseUrl();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
+      product: PRODUCT,
+      affiliateLink: 'https://meli.la/abc',
+    });
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToTelegramGroups).mockResolvedValue({
+      ok: true,
+      results: [{ groupId: '-100111', ok: true }],
+    });
+
+    const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/produto-x',
+      facebook: { ok: false, error: 'não configurado' },
+      instagram: { ok: false, error: 'não configurado' },
+      story: { ok: false, error: 'não configurado' },
+      tiktok: { ok: false, error: 'não configurado' },
+      telegram: { ok: true, results: [{ groupId: '-100111', ok: true }] },
+    });
+    expect(buildSocialCaption).toHaveBeenCalled();
   });
 
   it('retorna 400 com o passo link_parse quando o link é inválido', async () => {

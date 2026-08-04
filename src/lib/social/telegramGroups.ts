@@ -91,6 +91,6 @@ export async function postToTelegramGroups(imageUrl: string, caption: string): P
     };
     return await sendToTelegramGroups(groupIds, imageUrl, caption, { sendPhotoToGroup });
   } finally {
-    await client.disconnect();
+    await client.disconnect().catch(() => {});
   }
 }
