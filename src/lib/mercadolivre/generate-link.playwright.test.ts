@@ -75,3 +75,41 @@ describe('buildAmazonAffiliateLink', () => {
   });
 });
 
+// @ts-expect-error TS7016 — módulo .mjs sem declaração de tipos (allowJs: false no tsconfig)
+import { buildMagaluAffiliateLink } from './generate-link.playwright.mjs';
+
+describe('buildMagaluAffiliateLink', () => {
+  it('adiciona todos os parâmetros de afiliado numa URL sem nenhum deles', () => {
+    const result = buildMagaluAffiliateLink(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/',
+      '3440',
+      '5784620',
+    );
+    expect(result).toBe(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620&utm_source=divulgador&utm_medium=magalu&utm_campaign=5784620',
+    );
+  });
+
+  it('sobrescreve os parâmetros de afiliado de outro divulgador em vez de manter os dele', () => {
+    const result = buildMagaluAffiliateLink(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=9999&promoter_id=1111111&utm_source=divulgador&utm_medium=magalu&utm_campaign=1111111',
+      '3440',
+      '5784620',
+    );
+    expect(result).toBe(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620&utm_source=divulgador&utm_medium=magalu&utm_campaign=5784620',
+    );
+  });
+
+  it('preserva outros parâmetros existentes na URL que não sejam de afiliado', () => {
+    const result = buildMagaluAffiliateLink(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?seller_id=lojasantfl',
+      '3440',
+      '5784620',
+    );
+    expect(result).toBe(
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?seller_id=lojasantfl&partner_id=3440&promoter_id=5784620&utm_source=divulgador&utm_medium=magalu&utm_campaign=5784620',
+    );
+  });
+});
+
