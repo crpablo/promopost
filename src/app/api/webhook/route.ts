@@ -8,6 +8,8 @@ import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 import { postToTikTok } from '@/lib/social/tiktok';
+import { postToTelegramGroups } from '@/lib/social/telegramGroups';
+import type { TelegramGroupsResult } from '@/lib/social/telegramGroups';
 
 export const maxDuration = 300;
 
@@ -23,6 +25,10 @@ function isMetaConfigured(): boolean {
 
 function isTikTokConfigured(): boolean {
   return Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
+}
+
+function isTelegramGroupsConfigured(): boolean {
+  return Boolean(process.env.TELEGRAM_TARGET_GROUP_IDS);
 }
 
 function toErrorMessage(err: unknown): string {
@@ -62,7 +68,13 @@ async function postToSocialNetworks(
   affiliateLink: string,
   coupon?: string,
   discountedPrice?: number,
-): Promise<{ facebook: SocialResult; instagram: SocialResult; story: SocialResult; tiktok: SocialResult }> {
+): Promise<{
+  facebook: SocialResult;
+  instagram: SocialResult;
+  story: SocialResult;
+  tiktok: SocialResult;
+  telegram: TelegramGroupsResult;
+}> {
   // O Story usa dados brutos do produto, não a legenda — tem seu próprio
   // gate (Meta) e roda totalmente independente do resto.
   const storyResultPromise: Promise<SocialResult> = (async () => {
@@ -83,7 +95,7 @@ async function postToSocialNetworks(
   // monta ela se pelo menos uma dessas três redes estiver configurada.
   let caption: string | undefined;
   let captionError: SocialResult | undefined;
-  if (isMetaConfigured() || isTikTokConfigured()) {
+  if (isMetaConfigured() || isTikTokConfigured() || isTelegramGroupsConfigured()) {
     try {
       caption = buildSocialCaption(product, affiliateLink, coupon, discountedPrice);
     } catch (err) {
@@ -130,14 +142,21 @@ async function postToSocialNetworks(
     }
   })();
 
-  const [facebook, instagram, story, tiktok] = await Promise.all([
+  const telegramPromise: Promise<TelegramGroupsResult> = (async () => {
+    if (!isTelegramGroupsConfigured()) return { ok: false, results: [] };
+    if (captionError) return { ok: false, results: [] };
+    return postToTelegramGroups(product.imageUrl, caption as string);
+  })();
+
+  const [facebook, instagram, story, tiktok, telegram] = await Promise.all([
     facebookPromise,
     instagramPromise,
     storyResultPromise,
     tiktokPromise,
+    telegramPromise,
   ]);
 
-  return { facebook, instagram, story, tiktok };
+  return { facebook, instagram, story, tiktok, telegram };
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -176,7 +195,7 @@ export async function POST(request: Request): Promise<Response> {
       { coupon: body.coupon, discountedPrice: body.discountedPrice },
     );
 
-    const { facebook, instagram, story, tiktok } = await postToSocialNetworks(
+    const { facebook, instagram, story, tiktok, telegram } = await postToSocialNetworks(
       result.product,
       result.affiliateLink,
       body.coupon,
@@ -184,7 +203,7 @@ export async function POST(request: Request): Promise<Response> {
     );
 
     return Response.json(
-      { postUrl: result.postUrl, facebook, instagram, story, tiktok },
+      { postUrl: result.postUrl, facebook, instagram, story, tiktok, telegram },
       { status: 200 },
     );
   } catch (err) {

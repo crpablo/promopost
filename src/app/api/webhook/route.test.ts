@@ -8,6 +8,7 @@ vi.mock('@/lib/social/caption', () => ({ buildSocialCaption: vi.fn() }));
 vi.mock('@/lib/social/facebook', () => ({ postToFacebook: vi.fn() }));
 vi.mock('@/lib/social/instagram', () => ({ postToInstagram: vi.fn(), postStoryToInstagram: vi.fn() }));
 vi.mock('@/lib/social/tiktok', () => ({ postToTikTok: vi.fn() }));
+vi.mock('@/lib/social/telegramGroups', () => ({ postToTelegramGroups: vi.fn() }));
 
 import { buildPostText } from '@/lib/content/template';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
@@ -18,6 +19,7 @@ import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 import { postToTikTok } from '@/lib/social/tiktok';
+import { postToTelegramGroups } from '@/lib/social/telegramGroups';
 import { POST } from './route';
 
 function makeRequest(body: unknown, secret = 'correct-secret') {
@@ -43,6 +45,10 @@ function stubTikTokEnv() {
   vi.stubEnv('TIKTOK_CLIENT_SECRET', 'fake-tiktok-secret');
 }
 
+function stubTelegramGroupsEnv() {
+  vi.stubEnv('TELEGRAM_TARGET_GROUP_IDS', '-100111');
+}
+
 const PRODUCT = { title: 'Produto X', price: 99.9, imageUrl: 'https://x.com/img.jpg' };
 
 describe('POST /api/webhook', () => {
@@ -63,6 +69,7 @@ describe('POST /api/webhook', () => {
     stubMetaEnv();
     stubWebhookBaseUrl();
     stubTikTokEnv();
+    stubTelegramGroupsEnv();
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue('MLB123');
     vi.mocked(fetchProductAndAffiliateLink).mockResolvedValue({
@@ -78,6 +85,10 @@ describe('POST /api/webhook', () => {
     vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
     vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
     vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-1' });
+    vi.mocked(postToTelegramGroups).mockResolvedValue({
+      ok: true,
+      results: [{ groupId: '-100111', ok: true }],
+    });
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
@@ -89,6 +100,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: true, postId: 'ig-1' },
       story: { ok: true, postId: 'story-1' },
       tiktok: { ok: true, postId: 'tt-1' },
+      telegram: { ok: true, results: [{ groupId: '-100111', ok: true }] },
     });
     expect(postToFacebook).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
     expect(postToInstagram).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
@@ -97,6 +109,7 @@ describe('POST /api/webhook', () => {
       'Produto X',
       'legenda social',
     );
+    expect(postToTelegramGroups).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
   });
 
   it('retorna postUrl mesmo quando Facebook, Instagram, Story e TikTok falham (best-effort, não derruba o blog)', async () => {
@@ -118,6 +131,7 @@ describe('POST /api/webhook', () => {
     vi.mocked(postToInstagram).mockRejectedValue(new Error('Imagem inválida'));
     vi.mocked(postStoryToInstagram).mockRejectedValue(new Error('Story indisponível'));
     vi.mocked(postToTikTok).mockRejectedValue(new Error('Token do TikTok expirado'));
+    vi.mocked(postToTelegramGroups).mockRejectedValue(new Error('Sessão do Telegram expirada'));
 
     const response = await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
     const json = await response.json();
@@ -129,6 +143,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: false, error: 'Imagem inválida' },
       story: { ok: false, error: 'Story indisponível' },
       tiktok: { ok: false, error: 'Token do TikTok expirado' },
+      telegram: { ok: false, results: [] },
     });
   });
 
@@ -197,6 +212,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: false, error: 'produto malformado' },
       story: { ok: true, postId: 'story-1' },
       tiktok: { ok: false, error: 'não configurado' },
+      telegram: { ok: false, results: [] },
     });
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
@@ -233,6 +249,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: false, error: 'produto malformado' },
       story: { ok: true, postId: 'story-1' },
       tiktok: { ok: false, error: 'produto malformado' },
+      telegram: { ok: false, results: [] },
     });
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
@@ -266,6 +283,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: true, postId: 'ig-1' },
       story: { ok: false, error: 'WEBHOOK_BASE_URL não configurado' },
       tiktok: { ok: false, error: 'não configurado' },
+      telegram: { ok: false, results: [] },
     });
     expect(postStoryToInstagram).not.toHaveBeenCalled();
   });
@@ -296,6 +314,7 @@ describe('POST /api/webhook', () => {
       instagram: { ok: false, error: 'não configurado' },
       story: { ok: false, error: 'não configurado' },
       tiktok: { ok: true, postId: 'tt-1' },
+      telegram: { ok: false, results: [] },
     });
     expect(postToFacebook).not.toHaveBeenCalled();
     expect(postToInstagram).not.toHaveBeenCalled();
