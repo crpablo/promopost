@@ -5,6 +5,7 @@ const ALLOWED_IMAGE_HOSTS = [
   /(^|\.)susercontent\.com$/i,
   /(^|\.)media-amazon\.com$/i,
   /(^|\.)ssl-images-amazon\.com$/i,
+  /(^|\.)mlcdn\.com\.br$/i,
 ];
 
 function isAllowedImageHost(url: string): boolean {

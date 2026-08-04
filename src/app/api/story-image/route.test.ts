@@ -68,6 +68,21 @@ describe('GET /api/story-image', () => {
     expect(json?.erro).not.toBe('Host da imagem não permitido');
   });
 
+  it('aceita imageUrl de host mlcdn.com.br (Magalu) sem cair no erro de host não permitido', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+
+    const request = new Request(
+      'https://promopost.example.com/api/story-image?imageUrl=' +
+        encodeURIComponent('https://a-static.mlcdn.com.br/img.jpg') +
+        '&title=Produto&price=99.9',
+    );
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).not.toBe(400);
+    expect(json?.erro).not.toBe('Host da imagem não permitido');
+  });
+
   it('retorna 400 quando price não é um número válido', async () => {
     const request = new Request(
       'https://promopost.example.com/api/story-image?imageUrl=https://http2.mlstatic.com/img.jpg&title=Produto&price=abc',
