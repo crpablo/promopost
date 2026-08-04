@@ -258,4 +258,53 @@ describe('fetchProductAndAffiliateLink', () => {
       expect.any(Function),
     );
   });
+
+  it('retorna produto do Magalu com marketplace correto quando o script termina com sucesso', async () => {
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Carregador Portátil Turbo Power Bank',
+        price: 89.9,
+        imageUrl: 'https://a-static.mlcdn.com.br/img.jpg',
+        marketplace: 'magalu',
+        affiliateLink: 'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620',
+      })}\n`,
+    );
+
+    const result = await fetchProductAndAffiliateLink('https://www.magazineluiza.com.br/produto-x/p/abc123/');
+
+    expect(result.product.marketplace).toBe('magalu');
+  });
+
+  it('lança erro quando o script reporta MAGALU_CREDENTIALS_MISSING no stderr', async () => {
+    mockExecFileFailure('MAGALU_CREDENTIALS_MISSING');
+
+    await expect(
+      fetchProductAndAffiliateLink('https://www.magazineluiza.com.br/produto-x/p/abc123/'),
+    ).rejects.toThrow('Variáveis de ambiente do Magalu ausentes');
+  });
+
+  it('passa MAGALU_PARTNER_ID e MAGALU_PROMOTER_ID como env vars pro processo filho', async () => {
+    vi.stubEnv('MAGALU_PARTNER_ID', '3440');
+    vi.stubEnv('MAGALU_PROMOTER_ID', '5784620');
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        title: 'Produto',
+        price: 10,
+        imageUrl: 'https://a-static.mlcdn.com.br/img.jpg',
+        marketplace: 'magalu',
+        affiliateLink: 'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620',
+      })}\n`,
+    );
+
+    await fetchProductAndAffiliateLink('https://www.magazineluiza.com.br/produto-x/p/abc123/');
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      'node',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({ MAGALU_PARTNER_ID: '3440', MAGALU_PROMOTER_ID: '5784620' }),
+      }),
+      expect.any(Function),
+    );
+  });
 });

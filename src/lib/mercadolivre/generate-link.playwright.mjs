@@ -178,6 +178,7 @@ async function main() {
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
     const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
     const isAmazon = /(^|\.)amazon\.com\.br$/i.test(resolvedHost);
+    const isMagalu = /(^|\.)magazineluiza\.com\.br$/i.test(resolvedHost);
 
     // Checa as credenciais da Shopee assim que sabemos que é Shopee (logo
     // após o redirect ser resolvido), antes de gastar tempo de Sandbox e
@@ -207,7 +208,18 @@ async function main() {
       }
     }
 
-    if (!isMercadoLivre && !isShopee && !isAmazon) {
+    let magaluPartnerId;
+    let magaluPromoterId;
+    if (isMagalu) {
+      magaluPartnerId = process.env.MAGALU_PARTNER_ID;
+      magaluPromoterId = process.env.MAGALU_PROMOTER_ID;
+      if (!magaluPartnerId || !magaluPromoterId) {
+        console.error('MAGALU_CREDENTIALS_MISSING');
+        process.exit(1);
+      }
+    }
+
+    if (!isMercadoLivre && !isShopee && !isAmazon && !isMagalu) {
       console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
       process.exit(1);
     }
@@ -418,6 +430,14 @@ async function main() {
       // afiliado na própria URL resolvida do produto.
       const affiliateLink = buildAmazonAffiliateLink(resolvedUrl, amazonTag);
       console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'amazon', affiliateLink }));
+      return;
+    }
+
+    if (isMagalu) {
+      // 2 (Magalu). Sem API, sem sessão — só sobrescreve os parâmetros de
+      // afiliado na própria URL resolvida do produto.
+      const affiliateLink = buildMagaluAffiliateLink(resolvedUrl, magaluPartnerId, magaluPromoterId);
+      console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'magalu', affiliateLink }));
       return;
     }
 

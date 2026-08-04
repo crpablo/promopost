@@ -64,6 +64,8 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
       SHOPEE_APP_ID: process.env.SHOPEE_APP_ID ?? '',
       SHOPEE_SECRET_KEY: process.env.SHOPEE_SECRET_KEY ?? '',
       AMAZON_ASSOCIATE_TAG: process.env.AMAZON_ASSOCIATE_TAG ?? '',
+      MAGALU_PARTNER_ID: process.env.MAGALU_PARTNER_ID ?? '',
+      MAGALU_PROMOTER_ID: process.env.MAGALU_PROMOTER_ID ?? '',
     });
     stdout = result.stdout;
   } catch (err) {
@@ -85,6 +87,9 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     }
     if (stderr.includes('AMAZON_CREDENTIALS_MISSING')) {
       throw new Error('Variáveis de ambiente da Amazon ausentes: AMAZON_ASSOCIATE_TAG');
+    }
+    if (stderr.includes('MAGALU_CREDENTIALS_MISSING')) {
+      throw new Error('Variáveis de ambiente do Magalu ausentes: MAGALU_PARTNER_ID, MAGALU_PROMOTER_ID');
     }
     throw new Error(`Falha ao gerar link de afiliado: ${stderr.slice(0, 500)}`);
   } finally {
@@ -124,7 +129,13 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
   }
 
   const marketplace =
-    parsed.marketplace === 'shopee' ? 'shopee' : parsed.marketplace === 'amazon' ? 'amazon' : 'mercadolivre';
+    parsed.marketplace === 'shopee'
+      ? 'shopee'
+      : parsed.marketplace === 'amazon'
+        ? 'amazon'
+        : parsed.marketplace === 'magalu'
+          ? 'magalu'
+          : 'mercadolivre';
 
   return {
     product: { title: parsed.title, price: parsed.price, imageUrl: parsed.imageUrl, marketplace },
