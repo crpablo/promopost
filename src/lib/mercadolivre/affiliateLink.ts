@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { InvalidLinkError, ProductNotFoundError, SessionExpiredError } from '../pipeline';
+import { InvalidLinkError, ListCouponError, ProductNotFoundError, SessionExpiredError } from '../pipeline';
 import { loadSession } from '../session/sessionStore';
 import type { Product } from '../marketplace/types';
 
@@ -77,11 +77,6 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     if (stderr.includes('MARKETPLACE_NOT_SUPPORTED')) {
       throw new InvalidLinkError(`Link não leva a um marketplace suportado: ${stderr.slice(0, 300)}`);
     }
-    if (stderr.includes('PRODUCT_LIST_LINK')) {
-      throw new InvalidLinkError(
-        `Link aponta pro índice de listas do afiliado, sem produto único associado: ${stderr.slice(0, 300)}`,
-      );
-    }
     if (stderr.includes('SHOPEE_CREDENTIALS_MISSING')) {
       throw new Error('Variáveis de ambiente da Shopee ausentes: SHOPEE_APP_ID, SHOPEE_SECRET_KEY');
     }
@@ -103,11 +98,19 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     imageUrl?: unknown;
     marketplace?: unknown;
     affiliateLink?: unknown;
+    isListCoupon?: unknown;
   };
   try {
     parsed = JSON.parse(trimmed);
   } catch {
     throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
+  }
+
+  if (parsed.isListCoupon === true) {
+    if (typeof parsed.affiliateLink !== 'string' || !parsed.affiliateLink.startsWith('http')) {
+      throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
+    }
+    throw new ListCouponError(parsed.affiliateLink);
   }
 
   if (

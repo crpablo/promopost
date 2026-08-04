@@ -89,12 +89,34 @@ describe('fetchProductAndAffiliateLink', () => {
     ).rejects.toThrow('Link não leva a um marketplace suportado');
   });
 
-  it('lança InvalidLinkError (não ProductNotFoundError) quando o script reporta PRODUCT_LIST_LINK no stderr', async () => {
-    mockExecFileFailure('PRODUCT_LIST_LINK (resolvido para: https://www.mercadolivre.com.br/social/promozonevip/lists)');
+  it('lança ListCouponError com o link de afiliado quando o script reporta isListCoupon:true (cupom de lista)', async () => {
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        marketplace: 'mercadolivre',
+        affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+        isListCoupon: true,
+      })}\n`,
+    );
 
     await expect(
       fetchProductAndAffiliateLink('https://www.mercadolivre.com.br/social/promozonevip/lists'),
-    ).rejects.toThrow('índice de listas');
+    ).rejects.toMatchObject({
+      name: 'ListCouponError',
+      affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+    });
+  });
+
+  it('lança erro genérico quando isListCoupon:true mas affiliateLink está ausente ou inválido', async () => {
+    mockExecFileSuccess(
+      `${JSON.stringify({
+        marketplace: 'mercadolivre',
+        isListCoupon: true,
+      })}\n`,
+    );
+
+    await expect(
+      fetchProductAndAffiliateLink('https://www.mercadolivre.com.br/social/promozonevip/lists'),
+    ).rejects.toThrow('Saída inesperada do script de afiliado');
   });
 
   it('lança erro quando o script reporta SHOPEE_CREDENTIALS_MISSING no stderr', async () => {

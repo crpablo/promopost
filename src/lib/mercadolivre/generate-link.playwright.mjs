@@ -67,6 +67,55 @@ export function buildAmazonAffiliateLink(url, tag) {
   return parsed.toString();
 }
 
+// Visita o gerador de link de afiliado do Mercado Livre (só acessível pra
+// conta já aprovada no Programa de Afiliados) e gera um link de afiliado
+// pra qualquer URL do domínio deles — não é restrito a página de produto,
+// funciona igual pra página de lista de cupom (confirmado em validação
+// manual real, 2026-08-04). Reaproveitado tanto pro fluxo normal de
+// produto quanto pro fluxo de cupom de lista.
+async function generateMlAffiliateLink(page, url) {
+  await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub', {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000,
+  });
+
+  const urlField = page.locator('#url-0');
+  const formVisible = await urlField.isVisible({ timeout: 15000 }).catch(() => false);
+
+  if (!formVisible) {
+    console.error('SESSION_EXPIRED');
+    process.exit(1);
+  }
+
+  // A SPA religa os handlers reativos (que habilitam o botão "Gerar") um
+  // pouco depois do campo ficar visível — preencher rápido demais faz o
+  // valor entrar no DOM mas o estado do React não é atualizado, e o botão
+  // fica preso em disabled. Dá um tempo de acomodação antes de preencher.
+  await page.waitForTimeout(2500);
+  await urlField.fill(url);
+  await page.waitForTimeout(500);
+
+  const gerarBtn = page.getByRole('button', { name: 'Gerar' });
+  const stillDisabled = await gerarBtn.evaluate((el) => el.hasAttribute('disabled')).catch(() => true);
+  if (stillDisabled) {
+    // Fallback: repete o preenchimento caso o primeiro tenha corrido antes
+    // da hidratação religar o handler.
+    await urlField.fill('');
+    await urlField.fill(url);
+    await page.waitForTimeout(1500);
+  }
+
+  await gerarBtn.click({ timeout: 30000 });
+
+  const affiliateLink = await page.locator('#textfield-copyLink-1').inputValue({ timeout: 15000 });
+
+  if (!affiliateLink || !affiliateLink.startsWith('http')) {
+    throw new Error(`Campo de resultado sem link válido: "${affiliateLink}"`);
+  }
+
+  return affiliateLink.trim();
+}
+
 async function main() {
   const [, , productLink] = process.argv;
 
@@ -160,16 +209,19 @@ async function main() {
         resolvedUrl = page.url();
       }
 
-      // 0.6. Cupons de loja/categoria inteira (sem produto único vinculado) às
-      // vezes vêm com um link genérico pro índice de listas curadas do afiliado
-      // (ex: /social/promozonevip/lists) em vez de um produto — essa página não
-      // tem título/preço/imagem de produto pra extrair (confirmado em validação
-      // manual real, 2026-07-31). Detecta esse formato antes de tentar extrair
-      // e reporta um motivo específico, em vez de cair no PRODUCT_NOT_FOUND
-      // genérico (que soa como falha inesperada, quando na verdade é esperado).
+      // Cupons de loja/categoria inteira (sem produto único vinculado) às
+      // vezes vêm com um link genérico pro índice de listas curadas do
+      // afiliado (ex: /social/promozonevip/lists) em vez de um produto —
+      // essa página não tem título/preço/imagem de produto pra extrair
+      // (confirmado em validação manual real, 2026-07-31). Em vez de
+      // descartar (comportamento antigo), gera nosso próprio link de
+      // afiliado pra essa mesma página de lista — o gerador de link aceita
+      // qualquer URL do domínio, não só produto (confirmado em validação
+      // manual real, 2026-08-04).
       if (/\/social\/[^/]+\/lists\/?$/i.test(new URL(resolvedUrl).pathname)) {
-        console.error(`PRODUCT_LIST_LINK (resolvido para: ${resolvedUrl})`);
-        process.exit(1);
+        const affiliateLink = await generateMlAffiliateLink(page, resolvedUrl);
+        console.log(JSON.stringify({ marketplace: 'mercadolivre', affiliateLink, isListCoupon: true }));
+        return;
       }
     }
 
@@ -344,50 +396,9 @@ async function main() {
       return;
     }
 
-    // 2 (Mercado Livre). Visita o gerador de link de afiliado (só acessível
-    // pra conta já aprovada no Programa de Afiliados) e gera o link.
-    await page.goto('https://www.mercadolivre.com.br/afiliados/linkbuilder#hub', {
-      waitUntil: 'domcontentloaded',
-      timeout: 45000,
-    });
-
-    const urlField = page.locator('#url-0');
-    const formVisible = await urlField.isVisible({ timeout: 15000 }).catch(() => false);
-
-    if (!formVisible) {
-      console.error('SESSION_EXPIRED');
-      process.exit(1);
-    }
-
-    // A SPA religa os handlers reativos (que habilitam o botão "Gerar") um
-    // pouco depois do campo ficar visível — preencher rápido demais faz o
-    // valor entrar no DOM mas o estado do React não é atualizado, e o botão
-    // fica preso em disabled. Dá um tempo de acomodação antes de preencher.
-    await page.waitForTimeout(2500);
-    await urlField.fill(resolvedUrl);
-    await page.waitForTimeout(500);
-
-    const gerarBtn = page.getByRole('button', { name: 'Gerar' });
-    const stillDisabled = await gerarBtn.evaluate((el) => el.hasAttribute('disabled')).catch(() => true);
-    if (stillDisabled) {
-      // Fallback: repete o preenchimento caso o primeiro tenha corrido antes
-      // da hidratação religar o handler.
-      await urlField.fill('');
-      await urlField.fill(resolvedUrl);
-      await page.waitForTimeout(1500);
-    }
-
-    await gerarBtn.click({ timeout: 30000 });
-
-    const affiliateLink = await page.locator('#textfield-copyLink-1').inputValue({ timeout: 15000 });
-
-    if (!affiliateLink || !affiliateLink.startsWith('http')) {
-      throw new Error(`Campo de resultado sem link válido: "${affiliateLink}"`);
-    }
-
-    console.log(
-      JSON.stringify({ title, price, imageUrl, marketplace: 'mercadolivre', affiliateLink: affiliateLink.trim() }),
-    );
+    // 2 (Mercado Livre). Gera o link de afiliado pra URL do produto.
+    const affiliateLink = await generateMlAffiliateLink(page, resolvedUrl);
+    console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'mercadolivre', affiliateLink }));
   } catch (err) {
     console.error(String(err));
     process.exit(1);
