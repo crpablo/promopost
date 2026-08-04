@@ -9,11 +9,16 @@ vi.mock('@/lib/social/facebook', () => ({ postToFacebook: vi.fn() }));
 vi.mock('@/lib/social/instagram', () => ({ postToInstagram: vi.fn(), postStoryToInstagram: vi.fn() }));
 vi.mock('@/lib/social/tiktok', () => ({ postToTikTok: vi.fn() }));
 vi.mock('@/lib/social/telegramGroups', () => ({ postToTelegramGroups: vi.fn() }));
+vi.mock('@/lib/content/couponTemplate', () => ({
+  buildCouponCaption: vi.fn(),
+  buildCouponArticleText: vi.fn(),
+}));
 
 import { buildPostText } from '@/lib/content/template';
+import { buildCouponArticleText, buildCouponCaption } from '@/lib/content/couponTemplate';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
-import { SessionExpiredError } from '@/lib/pipeline';
+import { ListCouponError, SessionExpiredError } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
@@ -493,5 +498,82 @@ describe('POST /api/webhook', () => {
 
     expect(response.status).toBe(400);
     expect(json).toEqual({ erro: 'preço com desconto inválido' });
+  });
+
+  it('publica um post de cupom em todos os canais quando o pipeline rejeita com ListCouponError', async () => {
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    stubTikTokEnv();
+    stubTelegramGroupsEnv();
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockRejectedValue(
+      new ListCouponError('https://mercadolivre.com/sec/xyz789'),
+    );
+    vi.mocked(buildCouponCaption).mockReturnValue('legenda do cupom');
+    vi.mocked(buildCouponArticleText).mockReturnValue({
+      title: 'Cupom Mercado Livre: 20% OFF em compras acima de R$59,00',
+      body: 'corpo do artigo do cupom',
+    });
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/cupom-mercado-livre',
+    });
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-cupom-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-cupom-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-cupom-1' });
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-cupom-1' });
+    vi.mocked(postToTelegramGroups).mockResolvedValue({
+      ok: true,
+      results: [{ groupId: '-100111', ok: true }],
+    });
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://www.mercadolivre.com.br/social/promozonevip/lists',
+        coupon: 'LIVROSJOGOSRELAMPAGO',
+        discountPercent: 20,
+        minPurchaseValue: 59,
+        maxDiscountValue: 30,
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/cupom-mercado-livre',
+      facebook: { ok: true, postId: 'fb-cupom-1' },
+      instagram: { ok: true, postId: 'ig-cupom-1' },
+      story: { ok: true, postId: 'story-cupom-1' },
+      tiktok: { ok: true, postId: 'tt-cupom-1' },
+      telegram: { ok: true, results: [{ groupId: '-100111', ok: true }] },
+    });
+    expect(buildCouponCaption).toHaveBeenCalledWith({
+      coupon: 'LIVROSJOGOSRELAMPAGO',
+      affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+      discountPercent: 20,
+      minPurchaseValue: 59,
+      maxDiscountValue: 30,
+    });
+    expect(publishArticle).toHaveBeenCalledWith(
+      'Cupom Mercado Livre: 20% OFF em compras acima de R$59,00',
+      'corpo do artigo do cupom',
+      'https://promopost.example.com/api/coupon-image?coupon=LIVROSJOGOSRELAMPAGO&discountPercent=20&minPurchaseValue=59&maxDiscountValue=30',
+    );
+  });
+
+  it('retorna 400 quando ListCouponError acontece mas nenhum coupon foi informado no corpo', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.mocked(parseItemId).mockReturnValue('MLB123');
+    vi.mocked(fetchProductAndAffiliateLink).mockRejectedValue(
+      new ListCouponError('https://mercadolivre.com/sec/xyz789'),
+    );
+
+    const response = await POST(
+      makeRequest({ link: 'https://www.mercadolivre.com.br/social/promozonevip/lists' }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'cupom de lista detectado, mas nenhum código de cupom foi informado' });
   });
 });

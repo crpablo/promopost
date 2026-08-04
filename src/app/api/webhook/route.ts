@@ -1,8 +1,9 @@
 import { buildPostText } from '@/lib/content/template';
+import { buildCouponArticleText, buildCouponCaption, type CouponDetails } from '@/lib/content/couponTemplate';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import type { Product } from '@/lib/marketplace/types';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
-import { PipelineError, runPipeline } from '@/lib/pipeline';
+import { ListCouponError, PipelineError, runPipeline } from '@/lib/pipeline';
 import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
@@ -61,6 +62,24 @@ function buildTikTokImageProxyUrl(product: Product): string {
   }
   const params = new URLSearchParams({ imageUrl: product.imageUrl });
   return `${baseUrl}/api/tiktok-image-proxy?${params.toString()}`;
+}
+
+function buildCouponImageUrl(details: CouponDetails): string {
+  const baseUrl = process.env.WEBHOOK_BASE_URL;
+  if (!baseUrl) {
+    throw new Error('WEBHOOK_BASE_URL não configurado');
+  }
+  const params = new URLSearchParams({ coupon: details.coupon });
+  if (typeof details.discountPercent === 'number') {
+    params.set('discountPercent', String(details.discountPercent));
+  }
+  if (typeof details.minPurchaseValue === 'number') {
+    params.set('minPurchaseValue', String(details.minPurchaseValue));
+  }
+  if (typeof details.maxDiscountValue === 'number') {
+    params.set('maxDiscountValue', String(details.maxDiscountValue));
+  }
+  return `${baseUrl}/api/coupon-image?${params.toString()}`;
 }
 
 async function postToSocialNetworks(
@@ -177,13 +196,97 @@ async function postToSocialNetworks(
   return { facebook, instagram, story, tiktok, telegram };
 }
 
+async function postCouponToSocialNetworks(
+  couponImageUrl: string,
+  caption: string,
+  articleTitle: string,
+): Promise<{
+  facebook: SocialResult;
+  instagram: SocialResult;
+  story: SocialResult;
+  tiktok: SocialResult;
+  telegram: TelegramGroupsResult;
+}> {
+  const storyPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) return NAO_CONFIGURADO;
+    try {
+      const r = await postStoryToInstagram(couponImageUrl);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar Story do cupom no Instagram:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const facebookPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) return NAO_CONFIGURADO;
+    try {
+      const r = await postToFacebook(couponImageUrl, caption);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar cupom no Facebook:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const instagramPromise: Promise<SocialResult> = (async () => {
+    if (!isMetaConfigured()) return NAO_CONFIGURADO;
+    try {
+      const r = await postToInstagram(couponImageUrl, caption);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar cupom no Instagram:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const tiktokPromise: Promise<SocialResult> = (async () => {
+    if (!isTikTokConfigured()) return NAO_CONFIGURADO;
+    try {
+      const r = await postToTikTok(couponImageUrl, articleTitle.slice(0, 90), caption);
+      return { ok: true, postId: r.postId };
+    } catch (err) {
+      console.error('Erro ao postar cupom no TikTok:', err);
+      return { ok: false, error: toErrorMessage(err) };
+    }
+  })();
+
+  const telegramPromise: Promise<TelegramGroupsResult> = (async () => {
+    if (!isTelegramGroupsConfigured()) return { ok: false, results: [] };
+    try {
+      // Mesmo motivo do fragment "#.jpg" já documentado em postToSocialNetworks.
+      return await postToTelegramGroups(`${couponImageUrl}#.jpg`, caption);
+    } catch (err) {
+      console.error('Erro ao disparar cupom pros grupos do Telegram:', err);
+      return { ok: false, results: [], error: toErrorMessage(err) };
+    }
+  })();
+
+  const [facebook, instagram, story, tiktok, telegram] = await Promise.all([
+    facebookPromise,
+    instagramPromise,
+    storyPromise,
+    tiktokPromise,
+    telegramPromise,
+  ]);
+
+  return { facebook, instagram, story, tiktok, telegram };
+}
+
 export async function POST(request: Request): Promise<Response> {
   const secret = request.headers.get('x-promopost-secret');
   if (!secret || secret !== process.env.WEBHOOK_SECRET) {
     return Response.json({ erro: 'não autorizado' }, { status: 401 });
   }
 
-  let body: { link?: string; coupon?: string; discountedPrice?: number };
+  let body: {
+    link?: string;
+    coupon?: string;
+    discountedPrice?: number;
+    discountPercent?: number;
+    minPurchaseValue?: number;
+    maxDiscountValue?: number;
+  };
   try {
     body = await request.json();
   } catch {
@@ -199,6 +302,15 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (body.discountedPrice !== undefined && typeof body.discountedPrice !== 'number') {
     return Response.json({ erro: 'preço com desconto inválido' }, { status: 400 });
+  }
+  if (body.discountPercent !== undefined && typeof body.discountPercent !== 'number') {
+    return Response.json({ erro: 'percentual de desconto inválido' }, { status: 400 });
+  }
+  if (body.minPurchaseValue !== undefined && typeof body.minPurchaseValue !== 'number') {
+    return Response.json({ erro: 'valor mínimo de compra inválido' }, { status: 400 });
+  }
+  if (body.maxDiscountValue !== undefined && typeof body.maxDiscountValue !== 'number') {
+    return Response.json({ erro: 'desconto máximo inválido' }, { status: 400 });
   }
 
   try {
@@ -225,6 +337,43 @@ export async function POST(request: Request): Promise<Response> {
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof ListCouponError) {
+      if (!body.coupon) {
+        console.error('ListCouponError sem coupon no corpo — não é possível publicar sem código de cupom');
+        return Response.json(
+          { erro: 'cupom de lista detectado, mas nenhum código de cupom foi informado' },
+          { status: 400 },
+        );
+      }
+      try {
+        const couponDetails: CouponDetails = {
+          coupon: body.coupon,
+          affiliateLink: err.affiliateLink,
+          discountPercent: body.discountPercent,
+          minPurchaseValue: body.minPurchaseValue,
+          maxDiscountValue: body.maxDiscountValue,
+        };
+        const caption = buildCouponCaption(couponDetails);
+        const { title, body: articleBody } = buildCouponArticleText(couponDetails);
+        const couponImageUrl = buildCouponImageUrl(couponDetails);
+
+        const published = await publishArticle(title, articleBody, couponImageUrl);
+
+        const { facebook, instagram, story, tiktok, telegram } = await postCouponToSocialNetworks(
+          couponImageUrl,
+          caption,
+          title,
+        );
+
+        return Response.json(
+          { postUrl: published.url, facebook, instagram, story, tiktok, telegram },
+          { status: 200 },
+        );
+      } catch (couponErr) {
+        console.error('Erro ao publicar cupom de lista:', couponErr);
+        return Response.json({ erro: 'erro interno ao publicar cupom' }, { status: 500 });
+      }
+    }
     console.error('Erro no pipeline PromoPost:', err);
     if (err instanceof PipelineError) {
       const status = err.step === 'link_parse' ? 400 : 502;
