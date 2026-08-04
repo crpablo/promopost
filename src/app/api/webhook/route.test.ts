@@ -110,7 +110,7 @@ describe('POST /api/webhook', () => {
       'legenda social',
     );
     expect(postToTelegramGroups).toHaveBeenCalledWith(
-      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg#.jpg',
       'legenda social',
     );
   });

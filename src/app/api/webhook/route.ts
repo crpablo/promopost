@@ -147,11 +147,18 @@ async function postToSocialNetworks(
     if (captionError) return { ok: false, results: [], error: captionError.error };
     try {
       // Reaproveita o proxy do TikTok (que já normaliza pra JPEG) em vez da
-      // product.imageUrl crua — imagens do Mercado Livre vêm em WebP, e o
-      // Telegram manda esse formato como "documento" genérico em vez de
-      // foto, deixando a legenda pouco visível (confirmado em validação
-      // manual real, 2026-08-04). JPEG sempre chega como foto de verdade.
-      const proxiedImageUrl = buildTikTokImageProxyUrl(product);
+      // product.imageUrl crua. O motivo não é o Content-Type em si — é que
+      // o GramJS decide "foto vs documento" só olhando a extensão no fim da
+      // string da URL (Utils.isImage/_getExtension, sem round-trip pro
+      // servidor), e nossa própria URL de proxy não termina em .jpg/.png —
+      // a query string embutida às vezes termina em ".webp" (a extensão da
+      // imagem original), fazendo cair como "documento" genérico e deixar a
+      // legenda pouco visível, mesmo com o conteúdo já sendo JPEG de fato
+      // (confirmado em validação manual real, 2026-08-04, lendo o histórico
+      // de mensagens direto pela API). O fragment "#.jpg" no final força
+      // essa detecção sem afetar a URL de verdade que o servidor do
+      // Telegram busca (fragments nunca são enviados numa requisição HTTP).
+      const proxiedImageUrl = `${buildTikTokImageProxyUrl(product)}#.jpg`;
       return await postToTelegramGroups(proxiedImageUrl, caption as string);
     } catch (err) {
       console.error('Erro ao disparar pros grupos do Telegram:', err);
