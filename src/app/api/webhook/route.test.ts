@@ -109,7 +109,10 @@ describe('POST /api/webhook', () => {
       'Produto X',
       'legenda social',
     );
-    expect(postToTelegramGroups).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
+    expect(postToTelegramGroups).toHaveBeenCalledWith(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
+      'legenda social',
+    );
   });
 
   it('retorna postUrl mesmo quando Facebook, Instagram, Story e TikTok falham (best-effort, não derruba o blog)', async () => {

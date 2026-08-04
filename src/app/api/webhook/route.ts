@@ -146,7 +146,13 @@ async function postToSocialNetworks(
     if (!isTelegramGroupsConfigured()) return { ok: false, results: [] };
     if (captionError) return { ok: false, results: [], error: captionError.error };
     try {
-      return await postToTelegramGroups(product.imageUrl, caption as string);
+      // Reaproveita o proxy do TikTok (que já normaliza pra JPEG) em vez da
+      // product.imageUrl crua — imagens do Mercado Livre vêm em WebP, e o
+      // Telegram manda esse formato como "documento" genérico em vez de
+      // foto, deixando a legenda pouco visível (confirmado em validação
+      // manual real, 2026-08-04). JPEG sempre chega como foto de verdade.
+      const proxiedImageUrl = buildTikTokImageProxyUrl(product);
+      return await postToTelegramGroups(proxiedImageUrl, caption as string);
     } catch (err) {
       console.error('Erro ao disparar pros grupos do Telegram:', err);
       return { ok: false, results: [], error: toErrorMessage(err) };
