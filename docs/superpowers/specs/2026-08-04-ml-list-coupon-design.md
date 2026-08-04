@@ -25,7 +25,9 @@ Isso já foi detectado corretamente desde 2026-07-31 (ver memória `promopost-ml
 
 O mecanismo de detecção já existe e já é confiável em produção: o script Playwright resolve o link (inclusive atravessando encurtadores de terceiro) e, depois de resolvido, reconhece o padrão `/social/{handle}/lists`. A alternativa (classificar "é cupom de lista ou produto único" só pelo texto da mensagem, via LLM, sem nunca abrir o navegador) foi considerada e descartada — seria mais rápida, mas é lógica nova sem histórico de confiabilidade, contra um mecanismo que já está validado em produção desde 2026-07-31.
 
-A mudança real de arquitetura é o que acontece **depois** da detecção: hoje ela vira `PRODUCT_LIST_LINK` → `InvalidLinkError` → o pipeline inteiro aborta (400, nada publicado). Agora vira um novo tipo de erro (`ListCouponError`, ao lado de `InvalidLinkError`/`ProductNotFoundError`/`SessionExpiredError` já existentes em `pipeline.ts`), carregando a URL da lista resolvida — e o webhook, ao capturar especificamente esse erro, desvia pra um caminho de publicação de cupom em vez de reportar falha.
+A mudança real de arquitetura é o que acontece **depois** da detecção: hoje ela vira `PRODUCT_LIST_LINK` → `InvalidLinkError` → o pipeline inteiro aborta (400, nada publicado). Agora vira um novo tipo de erro (`ListCouponError`, ao lado de `InvalidLinkError`/`ProductNotFoundError`/`SessionExpiredError` já existentes em `pipeline.ts`) — e o webhook, ao capturar especificamente esse erro, desvia pra um caminho de publicação de cupom em vez de reportar falha.
+
+**O link de ativação usado no post é gerado pela nossa própria conta, não reaproveitado do afiliado que postou a mensagem original.** Descoberta importante: o gerador de link de afiliado do Mercado Livre (`mercadolivre.com.br/afiliados/linkbuilder#hub`, já usado hoje pro fluxo de produto) aceita qualquer URL do domínio deles — não é restrito a página de produto. Isso significa que a mesma automação já usada hoje (login com a sessão salva, colar a URL, clicar "Gerar") funciona igual pra página de lista (`/social/{handle}/lists`), só que sem precisar extrair título/preço/imagem (que não existem nesse tipo de página). O script Playwright passa a pular a extração de dado de produto pra esse caso e ir direto pro gerador de link, usando a própria URL da lista resolvida como entrada — o resultado é **nosso link de afiliado**, apontando pra mesma página de lista, mas creditando a conta do usuário em vez da conta de quem originalmente postou a mensagem no canal. `ListCouponError` carrega esse link já pronto (`affiliateLink`), não a URL crua da lista.
 
 Os detalhes do desconto (percentual, valor mínimo, desconto máximo) **não podem vir do Playwright** — não existe página de produto pra raspar. Eles só existem no texto original da mensagem do Telegram, então precisam ser capturados na extração via LLM (`extractPromo.ts`) e transportados no corpo da chamada ao webhook desde o início — chegam independentes do resultado do pipeline, e ficam disponíveis assim que o `ListCouponError` é capturado.
 
@@ -38,9 +40,12 @@ POST /api/webhook { link, coupon?, discountedPrice?, discountPercent?, minPurcha
   → runPipeline(link, ...) tenta o fluxo normal de produto
       → fetchProductAndAffiliateLink → Playwright resolve o link
           → reconhece /social/{handle}/lists (detecção já existente)
-          → lança ListCouponError(resolvedListUrl)   [NOVO — antes era InvalidLinkError/PRODUCT_LIST_LINK]
+          → pula a extração de título/preço/imagem (não existem nessa página)
+          → gera link de afiliado próprio pra essa URL de lista (reaproveita
+            o gerador de link já usado pro fluxo de produto)
+          → lança ListCouponError(affiliateLink)   [NOVO — antes era InvalidLinkError/PRODUCT_LIST_LINK]
   → webhook captura ListCouponError especificamente:
-      → publishCouponPromo({ coupon, discountPercent, minPurchaseValue, maxDiscountValue, listUrl, marketplace: 'mercadolivre' })
+      → publishCouponPromo({ coupon, discountPercent, minPurchaseValue, maxDiscountValue, affiliateLink, marketplace: 'mercadolivre' })
           → buildCouponCaption(...)              — NOVO, sem Product
           → buildCouponImageUrl(...)             — NOVO, aponta pra /api/coupon-image
           → publishCouponArticle(...)             — NOVO, Shopify sem Product
@@ -57,8 +62,8 @@ POST /api/webhook { link, coupon?, discountedPrice?, discountPercent?, minPurcha
 | **`extractPromo.ts`** (modificado) | Schema/prompt ganham `discountPercent`, `minPurchaseValue`, `maxDiscountValue` (opcionais, best-effort a partir do texto da mensagem). | LLM (Groq, já usado) |
 | **`poller.ts` / `telegram-poll/route.ts`** (modificado) | Repassa os 3 campos novos no corpo da chamada ao webhook, junto com `coupon`/`discountedPrice` já existentes. | `extractPromo` |
 | **`pipeline.ts`** (modificado) | Novo `ListCouponError`, ao lado das classes de erro já existentes. | — |
-| **`generate-link.playwright.mjs`** (modificado) | Continua emitindo o marcador `PRODUCT_LIST_LINK` (sem mudança na detecção em si) — só a URL resolvida da lista precisa ficar disponível pro mapeamento de erro seguinte. | — |
-| **`affiliateLink.ts`** (modificado) | Mapeia o marcador `PRODUCT_LIST_LINK` pra `ListCouponError` (com a URL resolvida) em vez de `InvalidLinkError`. | `pipeline.ts` |
+| **`generate-link.playwright.mjs`** (modificado) | Detecção do padrão `/social/{handle}/lists` sem mudança — mas em vez de emitir `PRODUCT_LIST_LINK` e sair, pula a extração de produto e reaproveita o gerador de link de afiliado (extraído pra uma função compartilhada, já que agora é chamado de dois lugares: fluxo normal de produto e este novo caso) pra gerar um link próprio pra URL da lista. Emite um formato de saída novo e distinto (`isListCoupon: true`, sem `title`/`price`/`imageUrl`). | — |
+| **`affiliateLink.ts`** (modificado) | Reconhece o novo formato de saída (`isListCoupon: true`) e lança `ListCouponError(affiliateLink)` em vez de retornar `AffiliateResult`. | `pipeline.ts` |
 | **`src/lib/content/couponTemplate.ts`** (novo) | `buildCouponCaption(...)` (legenda genérica de cupom) e `buildCouponArticleText(...)` (título+corpo pro Shopify) — funções puras, sem `Product`. | — |
 | **`src/app/api/coupon-image/route.tsx`** (novo) | Gera a imagem genérica de cupom via `next/og` (mesma tecnologia do `/api/story-image`) — fundo com cor da marca, selo de texto do marketplace, código do cupom, percentual/valores quando disponíveis. Bem mais simples que o Story: não busca nem converte foto de produto nenhuma. | `next/og` (já usado) |
 | **Webhook / `route.ts`** (modificado) | Captura `ListCouponError` especificamente e desvia pro caminho de publicação de cupom, reaproveitando os publishers sociais já existentes. Ganha `buildCouponImageUrl(...)` como função privada interna, no mesmo padrão já usado por `buildStoryImageUrl`/`buildTikTokImageProxyUrl` (também privadas, também dentro deste arquivo). | Todos acima |
@@ -70,9 +75,12 @@ Mensagem Telegram → extractPromo (LLM) → { isPromo, link, coupon, discounted
                                              discountPercent, minPurchaseValue, maxDiscountValue }
   → poller → POST /api/webhook (todos os campos no corpo)
   → runPipeline tenta fluxo de produto normal
-      → se resolver pra /social/{handle}/lists → ListCouponError(resolvedListUrl)
-  → webhook captura o erro, monta o post de cupom usando os campos do corpo original
-    (não do resultado do pipeline — não existe resultado de produto nesse caminho)
+      → se resolver pra /social/{handle}/lists → gera link de afiliado próprio
+        pra essa URL → ListCouponError(affiliateLink)
+  → webhook captura o erro, monta o post de cupom usando os campos do corpo
+    original (coupon/discountPercent/minPurchaseValue/maxDiscountValue) mais o
+    affiliateLink que veio no próprio erro — não do resultado do pipeline, que
+    não existe nesse caminho (sem produto)
   → publica: Shopify (artigo sem produto), Facebook/Instagram/Story/TikTok/Telegram
     (imagem genérica de cupom + legenda de cupom)
 ```
@@ -81,6 +89,7 @@ Mensagem Telegram → extractPromo (LLM) → { isPromo, link, coupon, discounted
 
 - **Cupom sem percentual/valores estruturados** — `discountPercent`/`minPurchaseValue`/`maxDiscountValue` ficam `null`; `buildCouponCaption`/`buildCouponImageUrl`/`buildCouponArticleText` omitem essas linhas graciosamente, publicando só com o código do cupom e o link de ativação.
 - **Link da lista não resolve mais** (removido, expirado) — mesmo tratamento de erro que já existe hoje pra link quebrado (o Playwright já reporta esse tipo de falha antes de chegar a reconhecer o padrão de lista); não tenta publicar cupom nenhum.
+- **Gerador de link de afiliado falha pra essa URL** (sessão expirada, ou o gerador rejeita/não aceita URL de lista — ver Riscos conhecidos) — mesmo tratamento de erro que já existe hoje pra falha do gerador no fluxo de produto (`SESSION_EXPIRED` ou erro genérico); não publica cupom nenhum, reporta falha normalmente.
 - **Sem `coupon` extraído** (mensagem confusa, LLM não capturou nem o código) — trata como falha de extração, mesmo caminho já existente hoje pra mensagens malformadas (não chega a virar webhook call).
 
 ## Testagem
@@ -92,6 +101,7 @@ Mensagem Telegram → extractPromo (LLM) → { isPromo, link, coupon, discounted
 
 ## Riscos conhecidos
 
+- **Comportamento do gerador de link de afiliado pra uma URL que não é de produto é desconhecido.** O gerador (`mercadolivre.com.br/afiliados/linkbuilder#hub`) nunca foi testado com uma URL de página de lista — só com produto. Pode funcionar exatamente igual (gerando um link curto de rastreamento pra a mesma página), pode se comportar de forma inesperada, ou pode até rejeitar a URL. Só descobre testando de verdade — mesmo padrão de descoberta iterativa já visto com Amazon/TikTok neste projeto. O link real trazido pelo usuário (`mercadolivre.com.br/social/promozonevip/lists`) serve como primeiro caso de validação manual.
 - **Extração dos valores numéricos (percentual, mínimo, máximo) pode ser inconsistente** — mensagens reais de cupom variam de formato entre afiliados diferentes (nem todas terão a estrutura limpa do exemplo trazido). Aceito como best-effort — o post se adapta ao que vier, sem exigir todos os campos.
 - **Volume de posts pode aumentar bastante** — cupons de loja/categoria inteira podem ser mais frequentes no canal do que promoções de produto único (não há como saber sem observar de verdade). Se isso virar ruído demais nos canais sociais, é um ajuste de política a discutir depois — fora de escopo antecipar agora.
 
