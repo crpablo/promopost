@@ -77,4 +77,15 @@ describe('buildSocialCaption', () => {
       'Produto W\n\n🏷️ R$129,90\n\n🔗 Confira: https://www.amazon.com.br/dp/B08XYZ?tag=crpablo0d-20 (também no link da bio)\n\n#promocao #oferta #amazon #desconto',
     );
   });
+
+  it('usa #magalu na legenda quando o produto vem do Magalu', () => {
+    const result = buildSocialCaption(
+      { title: 'Produto Z', price: 89.9, imageUrl: 'https://x.com/img.jpg', marketplace: 'magalu' },
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620',
+    );
+
+    expect(result).toBe(
+      'Produto Z\n\n🏷️ R$89,90\n\n🔗 Confira: https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620 (também no link da bio)\n\n#promocao #oferta #magalu #desconto',
+    );
+  });
 });

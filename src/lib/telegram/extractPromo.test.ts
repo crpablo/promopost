@@ -131,6 +131,33 @@ describe('extractPromo', () => {
     );
   });
 
+  it('extrai link e preço com desconto de uma promo do Magalu', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.magazineluiza.com.br/carregador-portatil-turbo-power-bank/p/dkba5b776g/te/accp/',
+        coupon: null,
+        discountedPrice: 89.9,
+      },
+    });
+
+    const result = await extractPromo(
+      'Carregador Portátil Turbo Power Bank\nDe R$129,90 por R$89,90\nhttps://www.magazineluiza.com.br/carregador-portatil-turbo-power-bank/p/dkba5b776g/te/accp/',
+    );
+
+    expect(result).toEqual({
+      isPromo: true,
+      link: 'https://www.magazineluiza.com.br/carregador-portatil-turbo-power-bank/p/dkba5b776g/te/accp/',
+      coupon: null,
+      discountedPrice: 89.9,
+    });
+    expect(generateObjectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('Carregador Portátil Turbo Power Bank'),
+      }),
+    );
+  });
+
   it('extrai discountPercent, minPurchaseValue e maxDiscountValue de um cupom de loja/categoria inteira', async () => {
     generateObjectMock.mockResolvedValue({
       object: {
