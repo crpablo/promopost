@@ -78,6 +78,9 @@ async function callWebhook(body: {
   link: string;
   coupon?: string;
   discountedPrice?: number;
+  discountPercent?: number;
+  minPurchaseValue?: number;
+  maxDiscountValue?: number;
 }): Promise<{ ok: boolean; status: number }> {
   const baseUrl = process.env.WEBHOOK_BASE_URL;
   const secret = process.env.WEBHOOK_SECRET;

@@ -22,6 +22,9 @@ export interface PollerDeps {
     link: string;
     coupon?: string;
     discountedPrice?: number;
+    discountPercent?: number;
+    minPurchaseValue?: number;
+    maxDiscountValue?: number;
   }) => Promise<WebhookCallResult>;
   acquireLock: () => Promise<boolean>;
   releaseLock: () => Promise<void>;
@@ -120,6 +123,9 @@ async function runPoll(deps: PollerDeps): Promise<PollResult> {
         link: extraction.link,
         coupon: extraction.coupon ?? undefined,
         discountedPrice: extraction.discountedPrice ?? undefined,
+        discountPercent: extraction.discountPercent ?? undefined,
+        minPurchaseValue: extraction.minPurchaseValue ?? undefined,
+        maxDiscountValue: extraction.maxDiscountValue ?? undefined,
       });
       if (result.ok) {
         promoCount += 1;

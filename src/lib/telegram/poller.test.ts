@@ -232,4 +232,30 @@ describe('pollTelegram', () => {
       ]);
     });
   });
+
+  it('repassa discountPercent, minPurchaseValue e maxDiscountValue pro callWebhook quando presentes', async () => {
+    const deps = makeDeps({
+      fetchNewMessages: vi.fn().mockResolvedValue([{ id: 12, text: 'cupom de lista' }]),
+      extractPromo: vi.fn().mockResolvedValue({
+        isPromo: true,
+        link: 'https://www.mercadolivre.com.br/social/promozonevip/lists',
+        coupon: 'LIVROSJOGOSRELAMPAGO',
+        discountedPrice: null,
+        discountPercent: 20,
+        minPurchaseValue: 59,
+        maxDiscountValue: 30,
+      }),
+    });
+
+    await pollTelegram(deps);
+
+    expect(deps.callWebhook).toHaveBeenCalledWith({
+      link: 'https://www.mercadolivre.com.br/social/promozonevip/lists',
+      coupon: 'LIVROSJOGOSRELAMPAGO',
+      discountedPrice: undefined,
+      discountPercent: 20,
+      minPurchaseValue: 59,
+      maxDiscountValue: 30,
+    });
+  });
 });
