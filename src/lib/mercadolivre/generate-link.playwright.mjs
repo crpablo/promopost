@@ -219,7 +219,15 @@ async function main() {
       // qualquer URL do domínio, não só produto (confirmado em validação
       // manual real, 2026-08-04).
       if (/\/social\/[^/]+\/lists\/?$/i.test(new URL(resolvedUrl).pathname)) {
-        const affiliateLink = await generateMlAffiliateLink(page, resolvedUrl);
+        // Remove query string/hash antes de gerar o link — a URL resolvida
+        // pode ainda carregar parâmetros de rastreamento do afiliado
+        // original (ex: matt_word, matt_tool) herdados da cadeia de
+        // redirecionamento, e não queremos que esses parâmetros sobrevivam
+        // pro link que geramos (o objetivo inteiro desse fluxo é criar um
+        // link que credita a NOSSA conta, nunca a do afiliado original).
+        const listUrl = new URL(resolvedUrl);
+        const cleanListUrl = `${listUrl.origin}${listUrl.pathname}`;
+        const affiliateLink = await generateMlAffiliateLink(page, cleanListUrl);
         console.log(JSON.stringify({ marketplace: 'mercadolivre', affiliateLink, isListCoupon: true }));
         return;
       }

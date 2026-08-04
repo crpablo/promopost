@@ -1,5 +1,6 @@
 // src/app/api/coupon-image/route.test.ts
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 import { GET } from './route';
 
 describe('GET /api/coupon-image', () => {
@@ -61,5 +62,16 @@ describe('GET /api/coupon-image', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/jpeg');
+  });
+
+  it('gera uma imagem JPEG real de 1080x1350', async () => {
+    const request = new Request('https://promopost.example.com/api/coupon-image?coupon=LIVROSJOGOSRELAMPAGO');
+    const response = await GET(request);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const metadata = await sharp(buffer).metadata();
+
+    expect(metadata.width).toBe(1080);
+    expect(metadata.height).toBe(1350);
+    expect(metadata.format).toBe('jpeg');
   });
 });

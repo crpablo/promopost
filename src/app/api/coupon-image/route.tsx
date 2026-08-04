@@ -69,7 +69,17 @@ export async function GET(request: Request): Promise<Response> {
           <div style={{ display: 'flex', color: 'white', fontSize: 64, fontWeight: 700, marginTop: 48 }}>
             Cupom de desconto
           </div>
-          <div style={{ display: 'flex', color: '#ffe14d', fontSize: 80, fontWeight: 700, marginTop: 24 }}>
+          <div
+            style={{
+              display: 'flex',
+              color: '#ffe14d',
+              fontSize: 64,
+              fontWeight: 700,
+              marginTop: 24,
+              maxWidth: '100%',
+              wordBreak: 'break-all',
+            }}
+          >
             {coupon}
           </div>
           {typeof discountPercent === 'number' ? (

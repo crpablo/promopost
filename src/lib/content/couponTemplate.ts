@@ -21,11 +21,22 @@ function buildMinPurchasePart(details: CouponDetails): string {
     : '';
 }
 
+function buildStandaloneMinPurchaseLine(details: CouponDetails): string | null {
+  return typeof details.minPurchaseValue === 'number'
+    ? `Em compras acima de R$${formatPrice(details.minPurchaseValue)}`
+    : null;
+}
+
 export function buildCouponCaption(details: CouponDetails): string {
   const lines: string[] = [`🎟️ Cupom Mercado Livre: ${details.coupon}`];
 
   if (typeof details.discountPercent === 'number') {
     lines.push(`🔥 ${details.discountPercent}% OFF${buildMinPurchasePart(details)}`);
+  } else {
+    const minPurchaseLine = buildStandaloneMinPurchaseLine(details);
+    if (minPurchaseLine) {
+      lines.push(`📦 ${minPurchaseLine}`);
+    }
   }
 
   if (typeof details.maxDiscountValue === 'number') {
@@ -47,6 +58,11 @@ export function buildCouponArticleText(details: CouponDetails): { title: string;
   const bodyLines: string[] = [`Cupom: <strong>${escapeHtml(details.coupon)}</strong>`];
   if (typeof details.discountPercent === 'number') {
     bodyLines.push(`${details.discountPercent}% OFF${minPurchasePart}`);
+  } else {
+    const minPurchaseLine = buildStandaloneMinPurchaseLine(details);
+    if (minPurchaseLine) {
+      bodyLines.push(minPurchaseLine);
+    }
   }
   if (typeof details.maxDiscountValue === 'number') {
     bodyLines.push(`Desconto máximo de R$${formatPrice(details.maxDiscountValue)}`);

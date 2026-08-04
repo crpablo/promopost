@@ -37,6 +37,17 @@ describe('buildCouponCaption', () => {
       '🎟️ Cupom Mercado Livre: LIVROSJOGOSRELAMPAGO\n\n🔥 20% OFF\n\n🔗 Ative: https://mercadolivre.com/sec/xyz789\n\n#promocao #cupom #mercadolivre',
     );
   });
+
+  it('mostra o valor mínimo de compra numa linha própria quando discountPercent está ausente', () => {
+    const text = buildCouponCaption({
+      coupon: 'LIVROSJOGOSRELAMPAGO',
+      affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+      minPurchaseValue: 200,
+    });
+    expect(text).toBe(
+      '🎟️ Cupom Mercado Livre: LIVROSJOGOSRELAMPAGO\n\n📦 Em compras acima de R$200,00\n\n🔗 Ative: https://mercadolivre.com/sec/xyz789\n\n#promocao #cupom #mercadolivre',
+    );
+  });
 });
 
 describe('buildCouponArticleText', () => {
@@ -66,5 +77,16 @@ describe('buildCouponArticleText', () => {
     });
     expect(result.body).toContain('&lt;script&gt;X&lt;/script&gt;');
     expect(result.body).toContain('https://mercadolivre.com/sec/xyz789?a=1&amp;b=2');
+  });
+
+  it('mostra o valor mínimo de compra no corpo do artigo quando discountPercent está ausente', () => {
+    const result = buildCouponArticleText({
+      coupon: 'LIVROSJOGOSRELAMPAGO',
+      affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+      minPurchaseValue: 200,
+    });
+    expect(result.body).toBe(
+      'Cupom: <strong>LIVROSJOGOSRELAMPAGO</strong><br><br>Em compras acima de R$200,00<br><br><a href="https://mercadolivre.com/sec/xyz789">Ative o cupom</a>',
+    );
   });
 });
