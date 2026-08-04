@@ -130,4 +130,52 @@ describe('extractPromo', () => {
       }),
     );
   });
+
+  it('extrai discountPercent, minPurchaseValue e maxDiscountValue de um cupom de loja/categoria inteira', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.mercadolivre.com.br/social/promozonevip/lists',
+        coupon: 'LIVROSJOGOSRELAMPAGO',
+        discountedPrice: null,
+        discountPercent: 20,
+        minPurchaseValue: 59,
+        maxDiscountValue: 30,
+      },
+    });
+
+    const result = await extractPromo(
+      'NOVO CUPOM MERCADOLIVRE\nLIVROSJOGOSRELAMPAGO 20% OFF em compras acima de R$ 59,00\nDesconto máximo de R$ 30\nAtive pelo link: http://www.mercadolivre.com.br/social/promozonevip/lists',
+    );
+
+    expect(result).toEqual({
+      isPromo: true,
+      link: 'https://www.mercadolivre.com.br/social/promozonevip/lists',
+      coupon: 'LIVROSJOGOSRELAMPAGO',
+      discountedPrice: null,
+      discountPercent: 20,
+      minPurchaseValue: 59,
+      maxDiscountValue: 30,
+    });
+  });
+
+  it('retorna discountPercent, minPurchaseValue e maxDiscountValue como null quando a mensagem não menciona esses valores', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.mercadolivre.com.br/produto/p/MLB999',
+        coupon: null,
+        discountedPrice: null,
+        discountPercent: null,
+        minPurchaseValue: null,
+        maxDiscountValue: null,
+      },
+    });
+
+    const result = await extractPromo('Produto legal https://www.mercadolivre.com.br/produto/p/MLB999');
+
+    expect(result.discountPercent).toBeNull();
+    expect(result.minPurchaseValue).toBeNull();
+    expect(result.maxDiscountValue).toBeNull();
+  });
 });
