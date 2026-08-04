@@ -35,6 +35,16 @@ export class InvalidLinkError extends Error {
   }
 }
 
+export class ListCouponError extends Error {
+  affiliateLink: string;
+
+  constructor(affiliateLink: string) {
+    super('LIST_COUPON');
+    this.name = 'ListCouponError';
+    this.affiliateLink = affiliateLink;
+  }
+}
+
 export interface PipelineResult {
   postUrl: string;
   product: Product;
@@ -73,6 +83,13 @@ export async function runPipeline(
   try {
     ({ product, affiliateLink } = await deps.fetchProductAndAffiliateLink(link));
   } catch (err) {
+    if (err instanceof ListCouponError) {
+      // Não é uma falha — é um resultado de "cupom sem produto único", que o
+      // webhook trata como um caminho de publicação separado. Repassa sem
+      // embrulhar em PipelineError, senão o webhook não conseguiria
+      // distinguir esse caso de uma falha de verdade.
+      throw err;
+    }
     if (err instanceof SessionExpiredError) {
       throw new PipelineError('affiliate_link', err.message, 'SESSION_EXPIRED');
     }

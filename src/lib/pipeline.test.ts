@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   InvalidLinkError,
+  ListCouponError,
   ProductNotFoundError,
   SessionExpiredError,
   runPipeline,
@@ -132,5 +133,22 @@ describe('runPipeline', () => {
       undefined,
       undefined,
     );
+  });
+
+  it('repassa ListCouponError sem embrulhar em PipelineError', async () => {
+    const deps = makeDeps({
+      fetchProductAndAffiliateLink: vi
+        .fn()
+        .mockRejectedValue(new ListCouponError('https://mercadolivre.com/sec/xyz789')),
+    });
+
+    await expect(
+      runPipeline('https://www.mercadolivre.com.br/social/promozonevip/lists', deps),
+    ).rejects.toMatchObject({
+      name: 'ListCouponError',
+      affiliateLink: 'https://mercadolivre.com/sec/xyz789',
+    });
+    expect(deps.buildPostText).not.toHaveBeenCalled();
+    expect(deps.publishArticle).not.toHaveBeenCalled();
   });
 });
