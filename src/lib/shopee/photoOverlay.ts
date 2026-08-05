@@ -31,7 +31,7 @@ export async function coverWatermark(imageBuffer: Buffer): Promise<Buffer> {
   const overlaySvg = Buffer.from(
     `<svg width="${overlayWidth}" height="${overlayHeight}">
       <rect width="100%" height="100%" fill="black" />
-      <text x="12" y="${overlayHeight / 2}" fill="white" font-size="${Math.round(overlayHeight * 0.35)}" font-family="sans-serif" dominant-baseline="middle">${OVERLAY_LABEL}</text>
+      <text x="50%" y="50%" fill="white" font-size="${Math.round(overlayHeight * 0.35)}" font-family="sans-serif" text-anchor="middle" dominant-baseline="middle">${OVERLAY_LABEL}</text>
     </svg>`,
   );
 
