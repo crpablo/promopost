@@ -5,17 +5,14 @@
 //   0. Navega até o link recebido e segue qualquer redirect (HTTP normal ou
 //      client-side via JS — comum em encurtador/rastreador de terceiro tipo
 //      go.promozone.ai) até o destino final, e só então confere se caiu
-//      mesmo numa página do Mercado Livre ou da Shopee. A partir daqui usa a
-//      URL resolvida (page.url()), não o link original recebido.
+//      mesmo numa página do Mercado Livre. A partir daqui usa a URL
+//      resolvida (page.url()), não o link original recebido.
 //   1. Extrai título/preço/imagem do HTML da página do produto.
 //      (a API pública api.mercadolibre.com/items/{id} passou a exigir OAuth
 //      e não serve mais pra isso — descoberto em validação manual real.)
-//   2. Gera o link de afiliado:
-//      - Mercado Livre: visita o gerador de link de afiliado
-//        (mercadolivre.com.br/afiliados/linkbuilder#hub, só acessível pra
-//        conta já aprovada no Programa de Afiliados) e gera o link.
-//      - Shopee: chama a API oficial de afiliados (GraphQL, assinada com
-//        SHA256) via fetch, sem precisar de um segundo browser.
+//   2. Gera o link de afiliado: visita o gerador de link de afiliado
+//      (mercadolivre.com.br/afiliados/linkbuilder#hub, só acessível pra
+//      conta já aprovada no Programa de Afiliados) e gera o link.
 //
 // Imprime em stdout um JSON: {"title","price","imageUrl","marketplace","affiliateLink"}.
 //
@@ -30,21 +27,8 @@
 // Chromium (comum em containers Docker), o browser fecha sozinho logo após
 // abrir ("Target page, context or browser has been closed").
 
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
-
-// Assinatura exigida pela Shopee Affiliate Open API: header
-// `Authorization: SHA256 Credential={appId}, Timestamp={timestamp}, Signature={signature}`,
-// onde signature = SHA256(appId + timestamp + payload + secret) em hex,
-// timestamp em segundos Unix. Extraída como função pura pra ser testável
-// isoladamente (ver generate-link.playwright.test.ts) sem precisar rodar o
-// resto do script (que depende de Playwright + sessão real).
-export function calculateShopeeSignature(appId, timestamp, payload, secret) {
-  return createHash('sha256')
-    .update(`${appId}${timestamp}${payload}${secret}`)
-    .digest('hex');
-}
 
 // Converte o texto formatado do preço da Amazon (ex: "R$ 1.234,56", com
 // separador de milhar "." e decimal ",") pra número. Remove tudo que não
@@ -60,7 +44,7 @@ export function parseBrazilianPrice(text) {
 // Gera o link de afiliado da Amazon sem nenhuma chamada de rede — só
 // adiciona (ou sobrescreve, se já existir) o parâmetro `tag` na própria
 // URL resolvida do produto. Extraída como função pura pra ser testável
-// isoladamente, mesmo padrão já usado pra calculateShopeeSignature.
+// isoladamente (ver generate-link.playwright.test.ts).
 export function buildAmazonAffiliateLink(url, tag) {
   const parsed = new URL(url);
   parsed.searchParams.set('tag', tag);
@@ -159,22 +143,7 @@ async function main() {
     }
     const isMercadoLivre =
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
-    const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
     const isAmazon = /(^|\.)amazon\.com\.br$/i.test(resolvedHost);
-
-    // Checa as credenciais da Shopee assim que sabemos que é Shopee (logo
-    // após o redirect ser resolvido), antes de gastar tempo de Sandbox e
-    // browser navegando/raspando título/preço/imagem que não vão ser usados
-    // se a chamada à API de afiliados nem vai poder ser feita.
-    let shopeeAppId;
-    let shopeeSecretKey;
-    if (isShopee) {
-      shopeeAppId = process.env.SHOPEE_APP_ID;
-      shopeeSecretKey = process.env.SHOPEE_SECRET_KEY;
-      if (!shopeeAppId || !shopeeSecretKey) {
-        throw new Error('SHOPEE_CREDENTIALS_MISSING');
-      }
-    }
 
     // Checa a credencial da Amazon assim que sabemos que é Amazon (o
     // Associate Tag não é secreto, mas sem ele o link gerado não dá
@@ -188,7 +157,7 @@ async function main() {
       }
     }
 
-    if (!isMercadoLivre && !isShopee && !isAmazon) {
+    if (!isMercadoLivre && !isAmazon) {
       throw new Error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
     }
 
@@ -264,13 +233,13 @@ async function main() {
     if (!title) {
       title = await page.locator('h1').first().innerText({ timeout: 15000 }).catch(() => null);
     }
-    if (!title && (isShopee || isAmazon)) {
-      // Páginas de produto da Shopee e da Amazon frequentemente não expõem
-      // o nome do produto de forma confiável só via h1 — cai pro og:title,
-      // mesmo padrão de .getAttribute já usado abaixo pra imageUrl/preço.
-      // Restrito a Shopee/Amazon pra não mudar o comportamento do Mercado
-      // Livre (que já funciona com h1) — uma página de erro/interstitial
-      // do ML sem h1 mas com og:title continuaria corretamente caindo em
+    if (!title && isAmazon) {
+      // Páginas de produto da Amazon frequentemente não expõem o nome do
+      // produto de forma confiável só via h1 — cai pro og:title, mesmo
+      // padrão de .getAttribute já usado abaixo pra imageUrl/preço.
+      // Restrito à Amazon pra não mudar o comportamento do Mercado Livre
+      // (que já funciona com h1) — uma página de erro/interstitial do ML
+      // sem h1 mas com og:title continuaria corretamente caindo em
       // PRODUCT_NOT_FOUND.
       title = await page
         .locator('meta[property="og:title"]')
@@ -305,9 +274,9 @@ async function main() {
       price = parseBrazilianPrice(priceRaw);
     }
     if (Number.isNaN(price)) {
-      // Fallback pras mesmas meta tags dos outros marketplaces — cobre
-      // Mercado Livre/Shopee sempre, e a Amazon só se o seletor acima não
-      // achar nada (layout diferente, produto sem preço visível, etc).
+      // Fallback pra mesma meta tag do Mercado Livre — sempre usada por ele,
+      // e pela Amazon só se o seletor acima não achar nada (layout
+      // diferente, produto sem preço visível, etc).
       priceRaw = await page
         .locator('meta[itemprop="price"], meta[property="product:price:amount"]')
         .first()
@@ -340,54 +309,6 @@ async function main() {
       throw new Error(
         `PRODUCT_NOT_FOUND (title=${JSON.stringify(title)}, price=${priceRaw}, imageUrl=${JSON.stringify(imageUrl)})`,
       );
-    }
-
-    if (isShopee) {
-      // 2 (Shopee). Gera o link de afiliado via API oficial (GraphQL,
-      // assinada com SHA256) — não precisa de um segundo browser nem de
-      // sessão logada, só das credenciais fixas do app de afiliado (já
-      // validadas mais acima, logo após sabermos que é Shopee).
-      const appId = shopeeAppId;
-      const secretKey = shopeeSecretKey;
-
-      const timestamp = Math.floor(Date.now() / 1000);
-      const query =
-        'mutation generateShortLink($input: ShortLinkInput!) { generateShortLink(input: $input) { shortLink } }';
-      const variables = { input: { originUrl: resolvedUrl, subIds: ['promopost'] } };
-      const payload = JSON.stringify({ query, variables });
-      const signature = calculateShopeeSignature(appId, timestamp, payload, secretKey);
-
-      let shopeeRes;
-      let shopeeJson;
-      try {
-        shopeeRes = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
-          },
-          body: payload,
-          // Evita que uma falha de rede/DNS (ex.: domínio errado) trave a
-          // Sandbox indefinidamente — mesma ordem de grandeza dos outros
-          // timeouts de rede deste arquivo (15-45s).
-          signal: AbortSignal.timeout(15000),
-        });
-        shopeeJson = await shopeeRes.json().catch(() => null);
-      } catch (err) {
-        // Erro de rede/DNS/timeout (ex.: TypeError: fetch failed) escaparia
-        // pro catch genérico do main() e viraria uma mensagem de erro
-        // genérica em vez do SHOPEE_API_ERROR documentado no runbook —
-        // capturamos aqui e re-emitimos com o marcador certo.
-        throw new Error(`SHOPEE_API_ERROR (${String(err)})`);
-      }
-      const affiliateLink = shopeeJson?.data?.generateShortLink?.shortLink;
-
-      if (!shopeeRes.ok || shopeeJson?.errors || !affiliateLink) {
-        throw new Error(`SHOPEE_API_ERROR (${JSON.stringify(shopeeJson?.errors ?? shopeeRes.status)})`);
-      }
-
-      console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'shopee', affiliateLink }));
-      return;
     }
 
     if (isAmazon) {

@@ -119,22 +119,6 @@ describe('fetchProductAndAffiliateLink', () => {
     ).rejects.toThrow('Saída inesperada do script de afiliado');
   });
 
-  it('lança erro quando o script reporta SHOPEE_CREDENTIALS_MISSING no stderr', async () => {
-    mockExecFileFailure('SHOPEE_CREDENTIALS_MISSING');
-
-    await expect(
-      fetchProductAndAffiliateLink('https://shopee.com.br/produto-x'),
-    ).rejects.toThrow('Variáveis de ambiente da Shopee ausentes');
-  });
-
-  it('lança erro quando o script reporta SHOPEE_API_ERROR no stderr', async () => {
-    mockExecFileFailure('SHOPEE_API_ERROR ({"message":"invalid signature"})');
-
-    await expect(
-      fetchProductAndAffiliateLink('https://shopee.com.br/produto-x'),
-    ).rejects.toThrow('Falha ao gerar link de afiliado da Shopee');
-  });
-
   it('lança erro genérico quando o script falha por outro motivo', async () => {
     mockExecFileFailure('TimeoutError: locator not found');
 
@@ -149,66 +133,6 @@ describe('fetchProductAndAffiliateLink', () => {
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
     ).rejects.toThrow('Saída inesperada do script de afiliado');
-  });
-
-  it('retorna produto da Shopee com marketplace correto quando o script termina com sucesso', async () => {
-    mockExecFileSuccess(
-      `${JSON.stringify({
-        title: 'Fone Bluetooth Shopee',
-        price: 59.9,
-        imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
-        marketplace: 'shopee',
-        affiliateLink: 'https://s.shopee.com.br/abc123',
-      })}\n`,
-    );
-
-    const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
-
-    expect(result.product.marketplace).toBe('shopee');
-  });
-
-  it('passa SHOPEE_APP_ID e SHOPEE_SECRET_KEY como env vars pro processo filho', async () => {
-    vi.stubEnv('SHOPEE_APP_ID', 'app123');
-    vi.stubEnv('SHOPEE_SECRET_KEY', 'secret456');
-    mockExecFileSuccess(
-      `${JSON.stringify({
-        title: 'Produto',
-        price: 10,
-        imageUrl: 'https://x.com/img.jpg',
-        marketplace: 'shopee',
-        affiliateLink: 'https://s.shopee.com.br/x',
-      })}\n`,
-    );
-
-    await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
-
-    expect(execFileMock).toHaveBeenCalledWith(
-      'node',
-      expect.any(Array),
-      expect.objectContaining({
-        env: expect.objectContaining({ SHOPEE_APP_ID: 'app123', SHOPEE_SECRET_KEY: 'secret456' }),
-      }),
-      expect.any(Function),
-    );
-  });
-
-  it('processa um link da Shopee normalmente mesmo quando loadSession (sessão do Mercado Livre) falha', async () => {
-    const { loadSession } = await import('../session/sessionStore');
-    vi.mocked(loadSession).mockRejectedValueOnce(new Error('Arquivo de sessão do Mercado Livre não encontrado'));
-
-    mockExecFileSuccess(
-      `${JSON.stringify({
-        title: 'Fone Bluetooth Shopee',
-        price: 59.9,
-        imageUrl: 'https://down-br.img.susercontent.com/img.jpg',
-        marketplace: 'shopee',
-        affiliateLink: 'https://s.shopee.com.br/abc123',
-      })}\n`,
-    );
-
-    const result = await fetchProductAndAffiliateLink('https://shopee.com.br/produto-x');
-
-    expect(result.product.marketplace).toBe('shopee');
   });
 
   it('retorna produto da Amazon com marketplace correto quando o script termina com sucesso', async () => {

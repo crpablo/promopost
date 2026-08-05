@@ -37,13 +37,13 @@ function runScript(
 }
 
 export async function fetchProductAndAffiliateLink(productLink: string): Promise<AffiliateResult> {
-  // A Shopee não usa sessão logada (a API de afiliados usa credenciais fixas
-  // via env var) — carregar a sessão do Mercado Livre não pode ser um
+  // A Amazon não usa sessão logada (só precisa do Associate Tag via env
+  // var) — carregar a sessão do Mercado Livre não pode ser um
   // pré-requisito rígido pra esse fluxo. Se a sessão do ML não estiver
   // configurada, seguimos com um storageState vazio: o fluxo Mercado Livre
   // continua falhando (com SESSION_EXPIRED, dentro do script, quando o
   // formulário do linkbuilder não aparecer) do jeito que já falhava hoje, e
-  // o fluxo Shopee fica inteiramente livre dessa dependência.
+  // o fluxo Amazon fica inteiramente livre dessa dependência.
   let sessionBuffer: Buffer;
   try {
     sessionBuffer = await loadSession();
@@ -61,8 +61,6 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     const result = await runScript(productLink, {
       ...process.env,
       ML_SESSION_PATH: sessionPath,
-      SHOPEE_APP_ID: process.env.SHOPEE_APP_ID ?? '',
-      SHOPEE_SECRET_KEY: process.env.SHOPEE_SECRET_KEY ?? '',
       AMAZON_ASSOCIATE_TAG: process.env.AMAZON_ASSOCIATE_TAG ?? '',
     });
     stdout = result.stdout;
@@ -76,12 +74,6 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     }
     if (stderr.includes('MARKETPLACE_NOT_SUPPORTED')) {
       throw new InvalidLinkError(`Link não leva a um marketplace suportado: ${stderr.slice(0, 300)}`);
-    }
-    if (stderr.includes('SHOPEE_CREDENTIALS_MISSING')) {
-      throw new Error('Variáveis de ambiente da Shopee ausentes: SHOPEE_APP_ID, SHOPEE_SECRET_KEY');
-    }
-    if (stderr.includes('SHOPEE_API_ERROR')) {
-      throw new Error(`Falha ao gerar link de afiliado da Shopee: ${stderr.slice(0, 300)}`);
     }
     if (stderr.includes('AMAZON_CREDENTIALS_MISSING')) {
       throw new Error('Variáveis de ambiente da Amazon ausentes: AMAZON_ASSOCIATE_TAG');
@@ -123,8 +115,7 @@ export async function fetchProductAndAffiliateLink(productLink: string): Promise
     throw new Error(`Saída inesperada do script de afiliado: ${trimmed.slice(0, 200)}`);
   }
 
-  const marketplace =
-    parsed.marketplace === 'shopee' ? 'shopee' : parsed.marketplace === 'amazon' ? 'amazon' : 'mercadolivre';
+  const marketplace = parsed.marketplace === 'amazon' ? 'amazon' : 'mercadolivre';
 
   return {
     product: { title: parsed.title, price: parsed.price, imageUrl: parsed.imageUrl, marketplace },
