@@ -205,4 +205,48 @@ describe('extractPromo', () => {
     expect(result.minPurchaseValue).toBeNull();
     expect(result.maxDiscountValue).toBeNull();
   });
+
+  it('extrai title e originalPrice de uma promo do Magalu com preço de/por', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.magazineluiza.com.br/cama-box-king-box-colchao-gazin/divulgador/oferta/229971100/co/cmbx/',
+        coupon: null,
+        discountedPrice: 2973.49,
+        title: 'Gazin Cama Box King Mola',
+        originalPrice: 4469.8,
+      },
+    });
+
+    const result = await extractPromo(
+      'ACORDAR RENOVADO É O QUE VOCÊ MERECE TODO DIA\n✅ Gazin Cama Box King Mola\n🔥 DE 4.469,80 | POR 2.973,49\nhttps://www.magazineluiza.com.br/cama-box-king-box-colchao-gazin/divulgador/oferta/229971100/co/cmbx/',
+    );
+
+    expect(result).toEqual({
+      isPromo: true,
+      link: 'https://www.magazineluiza.com.br/cama-box-king-box-colchao-gazin/divulgador/oferta/229971100/co/cmbx/',
+      coupon: null,
+      discountedPrice: 2973.49,
+      title: 'Gazin Cama Box King Mola',
+      originalPrice: 4469.8,
+    });
+  });
+
+  it('extrai title e originalPrice nulos quando a promo não é do Magalu', async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        isPromo: true,
+        link: 'https://www.mercadolivre.com.br/produto/p/MLB999',
+        coupon: null,
+        discountedPrice: null,
+        title: null,
+        originalPrice: null,
+      },
+    });
+
+    const result = await extractPromo('Produto legal https://www.mercadolivre.com.br/produto/p/MLB999');
+
+    expect(result.title).toBeNull();
+    expect(result.originalPrice).toBeNull();
+  });
 });

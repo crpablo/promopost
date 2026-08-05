@@ -10,6 +10,8 @@ const PromoSchema = z.object({
   discountPercent: z.number().nullable(),
   minPurchaseValue: z.number().nullable(),
   maxDiscountValue: z.number().nullable(),
+  title: z.string().nullable(),
+  originalPrice: z.number().nullable(),
 });
 
 export interface PromoExtraction {
@@ -20,6 +22,8 @@ export interface PromoExtraction {
   discountPercent: number | null;
   minPurchaseValue: number | null;
   maxDiscountValue: number | null;
+  title: string | null;
+  originalPrice: number | null;
 }
 
 const EXTRACTOR_MODEL_ID = process.env.PROMO_EXTRACTOR_MODEL ?? 'openai/gpt-oss-20b';
@@ -35,6 +39,8 @@ Se for uma promoção do Mercado Livre, da Shopee, da Amazon ou do Magalu, extra
 - discountPercent: o percentual de desconto do cupom (ex: "20% OFF" → 20), como número, quando a mensagem mencionar um desconto percentual. Se não houver percentual mencionado, use null.
 - minPurchaseValue: o valor mínimo de compra pra o cupom valer (ex: "compras acima de R$59,00" → 59), como número. Se não houver valor mínimo mencionado, use null.
 - maxDiscountValue: o valor máximo de desconto que o cupom concede (ex: "desconto máximo de R$30" → 30), como número. Se não houver valor máximo mencionado, use null.
+- title: o título/nome do produto mencionado na mensagem (ex: "Gazin Cama Box King Mola"), como aparece no texto. Se a mensagem não deixar claro um título específico de produto, use null.
+- originalPrice: o preço original mencionado na mensagem (o valor "de", antes do desconto), como número (ex: 4469.80). Se a mensagem não mencionar um preço original separado do preço final, use null.
 
 Se a mensagem não for sobre uma promoção do Mercado Livre, da Shopee, da Amazon nem do Magalu (ex: é conversa comum, ou é promoção de outro site/marketplace), retorne isPromo: false e os demais campos null.`;
 
