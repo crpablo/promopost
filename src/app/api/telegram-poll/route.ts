@@ -1,6 +1,8 @@
 import { TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions/index.js';
-import { coverWatermark } from '@/lib/magalu/photoOverlay';
+import { isMagaluLink } from '@/lib/magalu/affiliateLink';
+import { coverWatermark as coverMagaluWatermark } from '@/lib/magalu/photoOverlay';
+import { coverWatermark as coverShopeeWatermark } from '@/lib/shopee/photoOverlay';
 import { extractPromo } from '@/lib/telegram/extractPromo';
 import { loadCursor, saveCursor } from '@/lib/telegram/cursorStore';
 import { acquireLock, releaseLock } from '@/lib/telegram/lock';
@@ -76,7 +78,7 @@ async function getLatestMessageId(): Promise<number | null> {
   }
 }
 
-async function downloadMessagePhoto(messageId: number): Promise<string | null> {
+async function downloadMessagePhoto(messageId: number, link: string): Promise<string | null> {
   const { apiId, apiHash, chatId } = readTelegramEnv();
   const sessionString = await loadSession();
   const baseUrl = process.env.WEBHOOK_BASE_URL;
@@ -103,7 +105,7 @@ async function downloadMessagePhoto(messageId: number): Promise<string | null> {
       return null;
     }
 
-    const covered = await coverWatermark(buffer);
+    const covered = isMagaluLink(link) ? await coverMagaluWatermark(buffer) : await coverShopeeWatermark(buffer);
     await writeBufferFile(`telegram-media/${messageId}.jpg`, covered);
 
     return `${baseUrl}/api/telegram-media?id=${messageId}`;
