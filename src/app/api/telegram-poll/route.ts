@@ -1,10 +1,12 @@
 import { TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions/index.js';
+import { coverWatermark } from '@/lib/magalu/photoOverlay';
 import { extractPromo } from '@/lib/telegram/extractPromo';
 import { loadCursor, saveCursor } from '@/lib/telegram/cursorStore';
 import { acquireLock, releaseLock } from '@/lib/telegram/lock';
 import { loadSession } from '@/lib/telegram/sessionStore';
 import { pollTelegram, type TelegramMessage } from '@/lib/telegram/poller';
+import { writeBufferFile } from '@/lib/storage/localStore';
 
 export const maxDuration = 300;
 
@@ -74,6 +76,42 @@ async function getLatestMessageId(): Promise<number | null> {
   }
 }
 
+async function downloadMessagePhoto(messageId: number): Promise<string | null> {
+  const { apiId, apiHash, chatId } = readTelegramEnv();
+  const sessionString = await loadSession();
+  const baseUrl = process.env.WEBHOOK_BASE_URL;
+  if (!baseUrl) {
+    throw new Error('WEBHOOK_BASE_URL não configurado');
+  }
+
+  const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
+    connectionRetries: 3,
+  });
+  await client.connect();
+
+  try {
+    await client.getDialogs({ limit: 100 });
+    const entity = await client.getEntity(chatId);
+    const messages = await client.getMessages(entity, { ids: [messageId] });
+    const message = messages[0];
+    if (!message || !message.media) {
+      return null;
+    }
+
+    const buffer = await client.downloadMedia(message);
+    if (!buffer || typeof buffer === 'string') {
+      return null;
+    }
+
+    const covered = await coverWatermark(buffer);
+    await writeBufferFile(`telegram-media/${messageId}.jpg`, covered);
+
+    return `${baseUrl}/api/telegram-media?id=${messageId}`;
+  } finally {
+    await client.disconnect();
+  }
+}
+
 async function callWebhook(body: {
   link: string;
   coupon?: string;
@@ -114,6 +152,7 @@ export async function GET(request: Request): Promise<Response> {
       loadCursor,
       saveCursor,
       extractPromo,
+      downloadMessagePhoto,
       callWebhook,
       acquireLock,
       releaseLock,
