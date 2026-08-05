@@ -67,23 +67,6 @@ export function buildAmazonAffiliateLink(url, tag) {
   return parsed.toString();
 }
 
-// Gera o link de afiliado do Magalu sem nenhuma chamada de rede — sobrescreve
-// (ou adiciona, se ainda não existirem) os parâmetros partner_id, promoter_id
-// e utm_source/utm_medium/utm_campaign na própria URL resolvida do produto.
-// O link que já circula no canal de origem tem esse mesmo formato, só que
-// com os valores do afiliado que postou — aqui trocamos pelos nossos, pra
-// garantir que o crédito da venda vá pra nossa conta, nunca a de quem
-// postou originalmente (confirmado com o usuário, 2026-08-04).
-export function buildMagaluAffiliateLink(url, partnerId, promoterId) {
-  const parsed = new URL(url);
-  parsed.searchParams.set('partner_id', partnerId);
-  parsed.searchParams.set('promoter_id', promoterId);
-  parsed.searchParams.set('utm_source', 'divulgador');
-  parsed.searchParams.set('utm_medium', 'magalu');
-  parsed.searchParams.set('utm_campaign', promoterId);
-  return parsed.toString();
-}
-
 // Visita o gerador de link de afiliado do Mercado Livre (só acessível pra
 // conta já aprovada no Programa de Afiliados) e gera um link de afiliado
 // pra qualquer URL do domínio deles — não é restrito a página de produto,
@@ -178,7 +161,6 @@ async function main() {
       /(^|\.)mercadolivre\.com\.br$/i.test(resolvedHost) || /(^|\.)mercadolibre\.com$/i.test(resolvedHost);
     const isShopee = /(^|\.)shopee\.com\.br$/i.test(resolvedHost);
     const isAmazon = /(^|\.)amazon\.com\.br$/i.test(resolvedHost);
-    const isMagalu = /(^|\.)magazineluiza\.com\.br$/i.test(resolvedHost);
 
     // Checa as credenciais da Shopee assim que sabemos que é Shopee (logo
     // após o redirect ser resolvido), antes de gastar tempo de Sandbox e
@@ -208,18 +190,7 @@ async function main() {
       }
     }
 
-    let magaluPartnerId;
-    let magaluPromoterId;
-    if (isMagalu) {
-      magaluPartnerId = process.env.MAGALU_PARTNER_ID;
-      magaluPromoterId = process.env.MAGALU_PROMOTER_ID;
-      if (!magaluPartnerId || !magaluPromoterId) {
-        console.error('MAGALU_CREDENTIALS_MISSING');
-        process.exit(1);
-      }
-    }
-
-    if (!isMercadoLivre && !isShopee && !isAmazon && !isMagalu) {
+    if (!isMercadoLivre && !isShopee && !isAmazon) {
       console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
       process.exit(1);
     }
@@ -430,14 +401,6 @@ async function main() {
       // afiliado na própria URL resolvida do produto.
       const affiliateLink = buildAmazonAffiliateLink(resolvedUrl, amazonTag);
       console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'amazon', affiliateLink }));
-      return;
-    }
-
-    if (isMagalu) {
-      // 2 (Magalu). Sem API, sem sessão — só sobrescreve os parâmetros de
-      // afiliado na própria URL resolvida do produto.
-      const affiliateLink = buildMagaluAffiliateLink(resolvedUrl, magaluPartnerId, magaluPromoterId);
-      console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'magalu', affiliateLink }));
       return;
     }
 
