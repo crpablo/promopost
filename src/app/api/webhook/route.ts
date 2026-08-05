@@ -1,5 +1,6 @@
 import { buildPostText } from '@/lib/content/template';
 import { buildCouponArticleText, buildCouponCaption, type CouponDetails } from '@/lib/content/couponTemplate';
+import { buildMagaluAffiliateLink, isMagaluLink } from '@/lib/magalu/affiliateLink';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
 import type { Product } from '@/lib/marketplace/types';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
@@ -11,6 +12,7 @@ import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 import { postToTikTok } from '@/lib/social/tiktok';
 import { postToTelegramGroups } from '@/lib/social/telegramGroups';
 import type { TelegramGroupsResult } from '@/lib/social/telegramGroups';
+import { deleteFile } from '@/lib/storage/localStore';
 
 export const maxDuration = 300;
 
@@ -286,6 +288,9 @@ export async function POST(request: Request): Promise<Response> {
     discountPercent?: number;
     minPurchaseValue?: number;
     maxDiscountValue?: number;
+    title?: string;
+    originalPrice?: number;
+    photoUrl?: string;
   };
   try {
     body = await request.json();
@@ -311,6 +316,73 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (body.maxDiscountValue !== undefined && typeof body.maxDiscountValue !== 'number') {
     return Response.json({ erro: 'desconto máximo inválido' }, { status: 400 });
+  }
+  if (body.title !== undefined && typeof body.title !== 'string') {
+    return Response.json({ erro: 'título inválido' }, { status: 400 });
+  }
+  if (body.originalPrice !== undefined && typeof body.originalPrice !== 'number') {
+    return Response.json({ erro: 'preço original inválido' }, { status: 400 });
+  }
+  if (body.photoUrl !== undefined && typeof body.photoUrl !== 'string') {
+    return Response.json({ erro: 'URL de foto inválida' }, { status: 400 });
+  }
+
+  if (isMagaluLink(body.link)) {
+    if (!body.title || !body.photoUrl) {
+      return Response.json(
+        { erro: 'mensagem do Magalu sem título ou foto — não é possível publicar' },
+        { status: 400 },
+      );
+    }
+    const price = body.originalPrice ?? body.discountedPrice;
+    if (typeof price !== 'number') {
+      return Response.json(
+        { erro: 'mensagem do Magalu sem preço — não é possível publicar' },
+        { status: 400 },
+      );
+    }
+
+    const partnerId = process.env.MAGALU_PARTNER_ID;
+    const promoterId = process.env.MAGALU_PROMOTER_ID;
+    if (!partnerId || !promoterId) {
+      return Response.json(
+        { erro: 'Variáveis de ambiente do Magalu ausentes: MAGALU_PARTNER_ID, MAGALU_PROMOTER_ID' },
+        { status: 500 },
+      );
+    }
+
+    const photoId = new URL(body.photoUrl).searchParams.get('id');
+    const discountedForCaption = body.originalPrice !== undefined ? body.discountedPrice : undefined;
+
+    try {
+      const product: Product = {
+        title: body.title,
+        price,
+        imageUrl: body.photoUrl,
+        marketplace: 'magalu',
+      };
+      const affiliateLink = buildMagaluAffiliateLink(body.link, partnerId, promoterId);
+      const postBody = buildPostText(product, affiliateLink, body.coupon, discountedForCaption);
+      const published = await publishArticle(product.title, postBody, product.imageUrl);
+      const { facebook, instagram, story, tiktok, telegram } = await postToSocialNetworks(
+        product,
+        affiliateLink,
+        body.coupon,
+        discountedForCaption,
+      );
+
+      return Response.json(
+        { postUrl: published.url, facebook, instagram, story, tiktok, telegram },
+        { status: 200 },
+      );
+    } catch (err) {
+      console.error('Erro ao publicar produto do Magalu:', err);
+      return Response.json({ erro: 'erro interno ao publicar produto do Magalu' }, { status: 500 });
+    } finally {
+      if (photoId) {
+        await deleteFile(`telegram-media/${photoId}.jpg`);
+      }
+    }
   }
 
   try {

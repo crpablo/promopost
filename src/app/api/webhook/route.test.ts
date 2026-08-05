@@ -13,6 +13,7 @@ vi.mock('@/lib/content/couponTemplate', () => ({
   buildCouponCaption: vi.fn(),
   buildCouponArticleText: vi.fn(),
 }));
+vi.mock('@/lib/storage/localStore', () => ({ deleteFile: vi.fn() }));
 
 import { buildPostText } from '@/lib/content/template';
 import { buildCouponArticleText, buildCouponCaption } from '@/lib/content/couponTemplate';
@@ -25,6 +26,7 @@ import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 import { postToTikTok } from '@/lib/social/tiktok';
 import { postToTelegramGroups } from '@/lib/social/telegramGroups';
+import { deleteFile } from '@/lib/storage/localStore';
 import { POST } from './route';
 
 function makeRequest(body: unknown, secret = 'correct-secret') {
@@ -118,6 +120,149 @@ describe('POST /api/webhook', () => {
       'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg#.jpg',
       'legenda social',
     );
+  });
+
+  it('publica produto do Magalu direto da mensagem, sem chamar o pipeline de scraping', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    stubTikTokEnv();
+    stubTelegramGroupsEnv();
+    vi.stubEnv('MAGALU_PARTNER_ID', '3440');
+    vi.stubEnv('MAGALU_PROMOTER_ID', '5784620');
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/carregador-portatil',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-magalu-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-magalu-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-magalu-1' });
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-magalu-1' });
+    vi.mocked(postToTelegramGroups).mockResolvedValue({
+      ok: true,
+      results: [{ groupId: '-100111', ok: true }],
+    });
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://www.magazineluiza.com.br/carregador-portatil-turbo-power-bank/p/dkba5b776g/te/accp/?partner_id=9999&promoter_id=1111111',
+        title: 'Carregador Portátil Turbo Power Bank',
+        originalPrice: 129.9,
+        discountedPrice: 89.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=55',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/carregador-portatil',
+      facebook: { ok: true, postId: 'fb-magalu-1' },
+      instagram: { ok: true, postId: 'ig-magalu-1' },
+      story: { ok: true, postId: 'story-magalu-1' },
+      tiktok: { ok: true, postId: 'tt-magalu-1' },
+      telegram: { ok: true, results: [{ groupId: '-100111', ok: true }] },
+    });
+    expect(fetchProductAndAffiliateLink).not.toHaveBeenCalled();
+    expect(buildPostText).toHaveBeenCalledWith(
+      {
+        title: 'Carregador Portátil Turbo Power Bank',
+        price: 129.9,
+        imageUrl: 'https://promopost.example.com/api/telegram-media?id=55',
+        marketplace: 'magalu',
+      },
+      'https://www.magazineluiza.com.br/carregador-portatil-turbo-power-bank/p/dkba5b776g/te/accp/?partner_id=3440&promoter_id=5784620&utm_source=divulgador&utm_medium=magalu&utm_campaign=5784620',
+      undefined,
+      89.9,
+    );
+    expect(deleteFile).toHaveBeenCalledWith('telegram-media/55.jpg');
+  });
+
+  it('usa discountedPrice como preço quando o Magalu não informa originalPrice', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    vi.stubEnv('MAGALU_PARTNER_ID', '3440');
+    vi.stubEnv('MAGALU_PROMOTER_ID', '5784620');
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({ url: 'https://loja.myshopify.com/blogs/noticias/x' });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
+
+    await POST(
+      makeRequest({
+        link: 'https://www.magazineluiza.com.br/produto-x/p/abc123/',
+        title: 'Produto X',
+        discountedPrice: 59.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=99',
+      }),
+    );
+
+    expect(buildPostText).toHaveBeenCalledWith(
+      {
+        title: 'Produto X',
+        price: 59.9,
+        imageUrl: 'https://promopost.example.com/api/telegram-media?id=99',
+        marketplace: 'magalu',
+      },
+      'https://www.magazineluiza.com.br/produto-x/p/abc123/?partner_id=3440&promoter_id=5784620&utm_source=divulgador&utm_medium=magalu&utm_campaign=5784620',
+      undefined,
+      undefined,
+    );
+  });
+
+  it('retorna 400 quando o link é do Magalu mas falta title ou photoUrl', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({ link: 'https://www.magazineluiza.com.br/produto-x/p/abc123/' }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'mensagem do Magalu sem título ou foto — não é possível publicar' });
+    expect(fetchProductAndAffiliateLink).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 quando o link é do Magalu mas não tem nenhum preço', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://www.magazineluiza.com.br/produto-x/p/abc123/',
+        title: 'Produto X',
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=55',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'mensagem do Magalu sem preço — não é possível publicar' });
+  });
+
+  it('retorna 500 e apaga o arquivo da foto quando a publicação do produto do Magalu falha', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.stubEnv('MAGALU_PARTNER_ID', '3440');
+    vi.stubEnv('MAGALU_PROMOTER_ID', '5784620');
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockRejectedValue(new Error('Shopify indisponível'));
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://www.magazineluiza.com.br/produto-x/p/abc123/',
+        title: 'Produto X',
+        originalPrice: 99.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=77',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json).toEqual({ erro: 'erro interno ao publicar produto do Magalu' });
+    expect(deleteFile).toHaveBeenCalledWith('telegram-media/77.jpg');
   });
 
   it('retorna postUrl mesmo quando Facebook, Instagram, Story e TikTok falham (best-effort, não derruba o blog)', async () => {
