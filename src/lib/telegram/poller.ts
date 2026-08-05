@@ -1,3 +1,4 @@
+import { isMagaluLink } from '../magalu/affiliateLink';
 import type { PromoExtraction as PromoExtractionResult } from './extractPromo';
 
 export interface TelegramMessage {
@@ -18,6 +19,7 @@ export interface PollerDeps {
   loadCursor: () => Promise<number | null>;
   saveCursor: (messageId: number) => Promise<void>;
   extractPromo: (text: string) => Promise<PromoExtractionResult>;
+  downloadMessagePhoto: (messageId: number) => Promise<string | null>;
   callWebhook: (body: {
     link: string;
     coupon?: string;
@@ -25,6 +27,9 @@ export interface PollerDeps {
     discountPercent?: number;
     minPurchaseValue?: number;
     maxDiscountValue?: number;
+    title?: string;
+    originalPrice?: number;
+    photoUrl?: string;
   }) => Promise<WebhookCallResult>;
   acquireLock: () => Promise<boolean>;
   releaseLock: () => Promise<void>;
@@ -118,6 +123,11 @@ async function runPoll(deps: PollerDeps): Promise<PollResult> {
       continue;
     }
 
+    let photoUrl: string | undefined;
+    if (isMagaluLink(extraction.link)) {
+      photoUrl = (await deps.downloadMessagePhoto(message.id)) ?? undefined;
+    }
+
     try {
       const result = await deps.callWebhook({
         link: extraction.link,
@@ -126,6 +136,9 @@ async function runPoll(deps: PollerDeps): Promise<PollResult> {
         discountPercent: extraction.discountPercent ?? undefined,
         minPurchaseValue: extraction.minPurchaseValue ?? undefined,
         maxDiscountValue: extraction.maxDiscountValue ?? undefined,
+        title: extraction.title ?? undefined,
+        originalPrice: extraction.originalPrice ?? undefined,
+        photoUrl,
       });
       if (result.ok) {
         promoCount += 1;

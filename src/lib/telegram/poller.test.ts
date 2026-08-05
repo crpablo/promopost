@@ -14,6 +14,7 @@ function makeDeps(overrides: Partial<PollerDeps> = {}): PollerDeps {
       discountedPrice: null,
     }),
     callWebhook: vi.fn().mockResolvedValue({ ok: true, status: 200 }),
+    downloadMessagePhoto: vi.fn().mockResolvedValue(null),
     acquireLock: vi.fn().mockResolvedValue(true),
     releaseLock: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -257,5 +258,49 @@ describe('pollTelegram', () => {
       minPurchaseValue: 59,
       maxDiscountValue: 30,
     });
+  });
+
+  it('baixa a foto e repassa title/originalPrice/photoUrl quando o link é do Magalu', async () => {
+    const deps = makeDeps({
+      fetchNewMessages: vi.fn().mockResolvedValue([{ id: 55, text: 'promo magalu' }]),
+      extractPromo: vi.fn().mockResolvedValue({
+        isPromo: true,
+        link: 'https://www.magazineluiza.com.br/produto-x/p/abc123/',
+        coupon: null,
+        discountedPrice: 89.9,
+        title: 'Carregador Portátil',
+        originalPrice: 129.9,
+      }),
+      downloadMessagePhoto: vi.fn().mockResolvedValue('https://promopost.example.com/api/telegram-media?id=55'),
+    });
+
+    await pollTelegram(deps);
+
+    expect(deps.downloadMessagePhoto).toHaveBeenCalledWith(55);
+    expect(deps.callWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Carregador Portátil',
+        originalPrice: 129.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=55',
+      }),
+    );
+  });
+
+  it('não baixa foto quando o link não é do Magalu', async () => {
+    const deps = makeDeps({
+      fetchNewMessages: vi.fn().mockResolvedValue([{ id: 56, text: 'promo ML' }]),
+      extractPromo: vi.fn().mockResolvedValue({
+        isPromo: true,
+        link: 'https://www.mercadolivre.com.br/produto/p/MLB123',
+        coupon: null,
+        discountedPrice: null,
+        title: null,
+        originalPrice: null,
+      }),
+    });
+
+    await pollTelegram(deps);
+
+    expect(deps.downloadMessagePhoto).not.toHaveBeenCalled();
   });
 });
