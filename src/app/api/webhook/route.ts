@@ -2,6 +2,7 @@ import { buildPostText } from '@/lib/content/template';
 import { buildCouponArticleText, buildCouponCaption, type CouponDetails } from '@/lib/content/couponTemplate';
 import { buildMagaluAffiliateLink, isMagaluLink } from '@/lib/magalu/affiliateLink';
 import { fetchProductAndAffiliateLink } from '@/lib/mercadolivre/affiliateLink';
+import { buildShopeeAffiliateLink, isShopeeLink } from '@/lib/shopee/affiliateLink';
 import type { Product } from '@/lib/marketplace/types';
 import { parseItemId } from '@/lib/mercadolivre/parseLink';
 import { ListCouponError, PipelineError, runPipeline } from '@/lib/pipeline';
@@ -378,6 +379,64 @@ export async function POST(request: Request): Promise<Response> {
     } catch (err) {
       console.error('Erro ao publicar produto do Magalu:', err);
       return Response.json({ erro: 'erro interno ao publicar produto do Magalu' }, { status: 500 });
+    } finally {
+      if (photoId) {
+        await deleteFile(`telegram-media/${photoId}.jpg`);
+      }
+    }
+  }
+
+  if (isShopeeLink(body.link)) {
+    if (!body.title || !body.photoUrl) {
+      return Response.json(
+        { erro: 'mensagem da Shopee sem título ou foto — não é possível publicar' },
+        { status: 400 },
+      );
+    }
+    const price = body.originalPrice ?? body.discountedPrice;
+    if (typeof price !== 'number') {
+      return Response.json(
+        { erro: 'mensagem da Shopee sem preço — não é possível publicar' },
+        { status: 400 },
+      );
+    }
+
+    const appId = process.env.SHOPEE_APP_ID;
+    const secretKey = process.env.SHOPEE_SECRET_KEY;
+    if (!appId || !secretKey) {
+      return Response.json(
+        { erro: 'Variáveis de ambiente da Shopee ausentes: SHOPEE_APP_ID, SHOPEE_SECRET_KEY' },
+        { status: 500 },
+      );
+    }
+
+    const photoId = new URL(body.photoUrl).searchParams.get('id');
+    const discountedForCaption = body.originalPrice !== undefined ? body.discountedPrice : undefined;
+
+    try {
+      const product: Product = {
+        title: body.title,
+        price,
+        imageUrl: body.photoUrl,
+        marketplace: 'shopee',
+      };
+      const affiliateLink = await buildShopeeAffiliateLink(body.link, appId, secretKey);
+      const postBody = buildPostText(product, affiliateLink, body.coupon, discountedForCaption);
+      const published = await publishArticle(product.title, postBody, product.imageUrl);
+      const { facebook, instagram, story, tiktok, telegram } = await postToSocialNetworks(
+        product,
+        affiliateLink,
+        body.coupon,
+        discountedForCaption,
+      );
+
+      return Response.json(
+        { postUrl: published.url, facebook, instagram, story, tiktok, telegram },
+        { status: 200 },
+      );
+    } catch (err) {
+      console.error('Erro ao publicar produto da Shopee:', err);
+      return Response.json({ erro: 'erro interno ao publicar produto da Shopee' }, { status: 500 });
     } finally {
       if (photoId) {
         await deleteFile(`telegram-media/${photoId}.jpg`);

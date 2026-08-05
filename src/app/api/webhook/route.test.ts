@@ -14,6 +14,10 @@ vi.mock('@/lib/content/couponTemplate', () => ({
   buildCouponArticleText: vi.fn(),
 }));
 vi.mock('@/lib/storage/localStore', () => ({ deleteFile: vi.fn() }));
+vi.mock('@/lib/shopee/affiliateLink', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/shopee/affiliateLink')>();
+  return { ...actual, buildShopeeAffiliateLink: vi.fn() };
+});
 
 import { buildPostText } from '@/lib/content/template';
 import { buildCouponArticleText, buildCouponCaption } from '@/lib/content/couponTemplate';
@@ -26,6 +30,7 @@ import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
 import { postToTikTok } from '@/lib/social/tiktok';
 import { postToTelegramGroups } from '@/lib/social/telegramGroups';
+import { buildShopeeAffiliateLink } from '@/lib/shopee/affiliateLink';
 import { deleteFile } from '@/lib/storage/localStore';
 import { POST } from './route';
 
@@ -265,6 +270,172 @@ describe('POST /api/webhook', () => {
     expect(deleteFile).toHaveBeenCalledWith('telegram-media/77.jpg');
   });
 
+  it('publica produto da Shopee direto da mensagem, sem chamar o pipeline de scraping', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    stubTikTokEnv();
+    stubTelegramGroupsEnv();
+    vi.stubEnv('SHOPEE_APP_ID', 'app123');
+    vi.stubEnv('SHOPEE_SECRET_KEY', 'secret456');
+    vi.mocked(buildShopeeAffiliateLink).mockResolvedValue('https://s.shopee.com.br/novo-link');
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({
+      url: 'https://loja.myshopify.com/blogs/noticias/fone-bluetooth',
+    });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-shopee-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-shopee-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-shopee-1' });
+    vi.mocked(postToTikTok).mockResolvedValue({ postId: 'tt-shopee-1' });
+    vi.mocked(postToTelegramGroups).mockResolvedValue({
+      ok: true,
+      results: [{ groupId: '-100111', ok: true }],
+    });
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://s.shopee.com.br/3AbCdEfG',
+        title: 'Fone Bluetooth XYZ',
+        originalPrice: 69.9,
+        discountedPrice: 45.5,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=60',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      postUrl: 'https://loja.myshopify.com/blogs/noticias/fone-bluetooth',
+      facebook: { ok: true, postId: 'fb-shopee-1' },
+      instagram: { ok: true, postId: 'ig-shopee-1' },
+      story: { ok: true, postId: 'story-shopee-1' },
+      tiktok: { ok: true, postId: 'tt-shopee-1' },
+      telegram: { ok: true, results: [{ groupId: '-100111', ok: true }] },
+    });
+    expect(fetchProductAndAffiliateLink).not.toHaveBeenCalled();
+    expect(buildShopeeAffiliateLink).toHaveBeenCalledWith(
+      'https://s.shopee.com.br/3AbCdEfG',
+      'app123',
+      'secret456',
+    );
+    expect(buildPostText).toHaveBeenCalledWith(
+      {
+        title: 'Fone Bluetooth XYZ',
+        price: 69.9,
+        imageUrl: 'https://promopost.example.com/api/telegram-media?id=60',
+        marketplace: 'shopee',
+      },
+      'https://s.shopee.com.br/novo-link',
+      undefined,
+      45.5,
+    );
+    expect(deleteFile).toHaveBeenCalledWith('telegram-media/60.jpg');
+  });
+
+  it('usa discountedPrice como preço quando a Shopee não informa originalPrice', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    stubMetaEnv();
+    stubWebhookBaseUrl();
+    vi.stubEnv('SHOPEE_APP_ID', 'app123');
+    vi.stubEnv('SHOPEE_SECRET_KEY', 'secret456');
+    vi.mocked(buildShopeeAffiliateLink).mockResolvedValue('https://s.shopee.com.br/novo-link');
+    vi.mocked(buildPostText).mockReturnValue('texto do post');
+    vi.mocked(publishArticle).mockResolvedValue({ url: 'https://loja.myshopify.com/blogs/noticias/x' });
+    vi.mocked(buildSocialCaption).mockReturnValue('legenda social');
+    vi.mocked(postToFacebook).mockResolvedValue({ postId: 'fb-1' });
+    vi.mocked(postToInstagram).mockResolvedValue({ postId: 'ig-1' });
+    vi.mocked(postStoryToInstagram).mockResolvedValue({ postId: 'story-1' });
+
+    await POST(
+      makeRequest({
+        link: 'https://s.shopee.com.br/xyz',
+        title: 'Produto X',
+        discountedPrice: 39.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=61',
+      }),
+    );
+
+    expect(buildPostText).toHaveBeenCalledWith(
+      {
+        title: 'Produto X',
+        price: 39.9,
+        imageUrl: 'https://promopost.example.com/api/telegram-media?id=61',
+        marketplace: 'shopee',
+      },
+      'https://s.shopee.com.br/novo-link',
+      undefined,
+      undefined,
+    );
+  });
+
+  it('retorna 400 quando o link é da Shopee mas falta title ou photoUrl', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(makeRequest({ link: 'https://s.shopee.com.br/xyz' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'mensagem da Shopee sem título ou foto — não é possível publicar' });
+    expect(buildShopeeAffiliateLink).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 quando o link é da Shopee mas não tem nenhum preço', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://s.shopee.com.br/xyz',
+        title: 'Produto X',
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=62',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ erro: 'mensagem da Shopee sem preço — não é possível publicar' });
+  });
+
+  it('retorna 500 quando faltam SHOPEE_APP_ID/SHOPEE_SECRET_KEY', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://s.shopee.com.br/xyz',
+        title: 'Produto X',
+        originalPrice: 59.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=64',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json).toEqual({
+      erro: 'Variáveis de ambiente da Shopee ausentes: SHOPEE_APP_ID, SHOPEE_SECRET_KEY',
+    });
+  });
+
+  it('retorna 500 e apaga o arquivo da foto quando a publicação do produto da Shopee falha', async () => {
+    vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
+    vi.stubEnv('SHOPEE_APP_ID', 'app123');
+    vi.stubEnv('SHOPEE_SECRET_KEY', 'secret456');
+    vi.mocked(buildShopeeAffiliateLink).mockRejectedValue(new Error('SHOPEE_API_ERROR (timeout)'));
+
+    const response = await POST(
+      makeRequest({
+        link: 'https://s.shopee.com.br/xyz',
+        title: 'Produto X',
+        originalPrice: 59.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=63',
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json).toEqual({ erro: 'erro interno ao publicar produto da Shopee' });
+    expect(deleteFile).toHaveBeenCalledWith('telegram-media/63.jpg');
+  });
+
   it('retorna postUrl mesmo quando Facebook, Instagram, Story e TikTok falham (best-effort, não derruba o blog)', async () => {
     stubMetaEnv();
     stubWebhookBaseUrl();
@@ -339,7 +510,7 @@ describe('POST /api/webhook', () => {
     vi.stubEnv('WEBHOOK_SECRET', 'correct-secret');
     vi.mocked(parseItemId).mockReturnValue(null);
 
-    const response = await POST(makeRequest({ link: 'https://shopee.com.br/x' }));
+    const response = await POST(makeRequest({ link: 'https://www.mercadolivre.com.br/produto-invalido' }));
     const json = await response.json();
 
     expect(response.status).toBe(400);
