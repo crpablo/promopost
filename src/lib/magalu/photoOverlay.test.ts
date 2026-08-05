@@ -22,7 +22,7 @@ describe('coverWatermark', () => {
 
     expect(sharpMock).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
     expect(compositeMock).toHaveBeenCalledWith([
-      expect.objectContaining({ top: 860, left: 0 }),
+      expect.objectContaining({ top: 750, left: 0 }),
     ]);
     expect(jpegMock).toHaveBeenCalledWith({ quality: 90 });
     expect(result).toEqual(Buffer.from([9, 9, 9]));
@@ -34,6 +34,6 @@ describe('coverWatermark', () => {
 
     await coverWatermark(Buffer.from([1]));
 
-    expect(compositeMock).toHaveBeenCalledWith([expect.objectContaining({ top: 1290, left: 0 })]);
+    expect(compositeMock).toHaveBeenCalledWith([expect.objectContaining({ top: 1125, left: 0 })]);
   });
 });
