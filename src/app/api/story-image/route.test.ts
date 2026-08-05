@@ -4,6 +4,7 @@ import { GET } from './route';
 describe('GET /api/story-image', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
 
@@ -25,6 +26,22 @@ describe('GET /api/story-image', () => {
     const response = await GET(request);
 
     expect(response.status).toBe(400);
+  });
+
+  it('aceita imageUrl do próprio domínio (WEBHOOK_BASE_URL, foto do Magalu) sem cair no erro de host não permitido', async () => {
+    vi.stubEnv('WEBHOOK_BASE_URL', 'https://promopost.tobiestore.com.br');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+
+    const request = new Request(
+      'https://promopost.example.com/api/story-image?imageUrl=' +
+        encodeURIComponent('https://promopost.tobiestore.com.br/api/telegram-media?id=55') +
+        '&title=Produto&price=99.9',
+    );
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).not.toBe(400);
+    expect(json?.erro).not.toBe('Host da imagem não permitido');
   });
 
   it('retorna 400 quando imageUrl não é de um host permitido', async () => {

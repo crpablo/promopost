@@ -11,7 +11,15 @@ const ALLOWED_IMAGE_HOSTS = [
 function isAllowedImageHost(url: string): boolean {
   try {
     const hostname = new URL(url).hostname;
-    return ALLOWED_IMAGE_HOSTS.some((pattern) => pattern.test(hostname));
+    if (ALLOWED_IMAGE_HOSTS.some((pattern) => pattern.test(hostname))) {
+      return true;
+    }
+    // Fotos do Magalu são hospedadas no próprio domínio (rota
+    // /api/telegram-media, ver src/lib/magalu/photoOverlay.ts) em vez de um
+    // CDN de terceiro — permite o host apontado por WEBHOOK_BASE_URL em vez
+    // de fixar o domínio no código.
+    const baseUrl = process.env.WEBHOOK_BASE_URL;
+    return Boolean(baseUrl && hostname === new URL(baseUrl).hostname);
   } catch {
     return false;
   }

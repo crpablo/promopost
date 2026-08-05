@@ -16,6 +16,7 @@ import { GET } from './route';
 describe('GET /api/tiktok-image-proxy', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
   });
 
@@ -115,6 +116,42 @@ describe('GET /api/tiktok-image-proxy', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/jpeg');
     expect(body).toEqual(JPEG_OUTPUT_BYTES);
+  });
+
+  it('busca e normaliza imagem do próprio domínio (WEBHOOK_BASE_URL, foto do Magalu) sem cair no erro de host não permitido', async () => {
+    vi.stubEnv('WEBHOOK_BASE_URL', 'https://promopost.tobiestore.com.br');
+    const imageBytes = new Uint8Array([1, 2, 3, 4]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/jpeg' }),
+        arrayBuffer: async () => imageBytes.buffer,
+      }),
+    );
+    toBufferMock.mockResolvedValue(Buffer.from(JPEG_OUTPUT_BYTES));
+
+    const request = new Request(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=' +
+        encodeURIComponent('https://promopost.tobiestore.com.br/api/telegram-media?id=55'),
+    );
+    const response = await GET(request);
+    const body = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(JPEG_OUTPUT_BYTES);
+  });
+
+  it('retorna 400 quando o host não é permitido mesmo com WEBHOOK_BASE_URL configurado pra outro domínio', async () => {
+    vi.stubEnv('WEBHOOK_BASE_URL', 'https://promopost.tobiestore.com.br');
+
+    const request = new Request(
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=' +
+        encodeURIComponent('https://evil.example.com/x.jpg'),
+    );
+    const response = await GET(request);
+
+    expect(response.status).toBe(400);
   });
 
   it('retorna 502 quando a normalização para JPEG falha', async () => {
