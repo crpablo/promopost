@@ -52,6 +52,12 @@ export async function readBufferFile(filename: string): Promise<Buffer | null> {
   }
 }
 
+export async function writeBufferFile(filename: string, data: Buffer): Promise<void> {
+  const fullPath = resolveDataPath(filename);
+  await mkdir(path.dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, data);
+}
+
 export async function fileAgeMs(filename: string): Promise<number | null> {
   try {
     const info = await stat(resolveDataPath(filename));

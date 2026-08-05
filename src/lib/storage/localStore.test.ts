@@ -67,6 +67,16 @@ describe('readBufferFile', () => {
     const buffer = await readBufferFile('foo.json');
     expect(buffer?.toString()).toBe(JSON.stringify({ a: 1 }));
   });
+
+  it('writeBufferFile grava em subpasta que ainda não existe, e readBufferFile lê de volta', async () => {
+    const { readBufferFile, writeBufferFile } = await import('./localStore');
+    const buffer = Buffer.from([1, 2, 3, 4]);
+
+    await writeBufferFile('telegram-media/123.jpg', buffer);
+    const result = await readBufferFile('telegram-media/123.jpg');
+
+    expect(result).toEqual(buffer);
+  });
 });
 
 describe('fileAgeMs', () => {
