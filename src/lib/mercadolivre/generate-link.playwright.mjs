@@ -83,8 +83,7 @@ async function generateMlAffiliateLink(page, url) {
   const formVisible = await urlField.isVisible({ timeout: 15000 }).catch(() => false);
 
   if (!formVisible) {
-    console.error('SESSION_EXPIRED');
-    process.exit(1);
+    throw new Error('SESSION_EXPIRED');
   }
 
   // A SPA religa os handlers reativos (que habilitam o botão "Gerar") um
@@ -145,6 +144,7 @@ async function main() {
   });
   const page = await context.newPage();
 
+  let exitCode = 0;
   try {
     // 0. Resolve redirect (HTTP ou client-side) e confere destino final
     await page.goto(productLink, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
@@ -172,8 +172,7 @@ async function main() {
       shopeeAppId = process.env.SHOPEE_APP_ID;
       shopeeSecretKey = process.env.SHOPEE_SECRET_KEY;
       if (!shopeeAppId || !shopeeSecretKey) {
-        console.error('SHOPEE_CREDENTIALS_MISSING');
-        process.exit(1);
+        throw new Error('SHOPEE_CREDENTIALS_MISSING');
       }
     }
 
@@ -185,14 +184,12 @@ async function main() {
     if (isAmazon) {
       amazonTag = process.env.AMAZON_ASSOCIATE_TAG;
       if (!amazonTag) {
-        console.error('AMAZON_CREDENTIALS_MISSING');
-        process.exit(1);
+        throw new Error('AMAZON_CREDENTIALS_MISSING');
       }
     }
 
     if (!isMercadoLivre && !isShopee && !isAmazon) {
-      console.error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
-      process.exit(1);
+      throw new Error(`MARKETPLACE_NOT_SUPPORTED (resolvido para: ${resolvedUrl})`);
     }
 
     if (isMercadoLivre) {
@@ -340,10 +337,9 @@ async function main() {
     }
 
     if (!title || Number.isNaN(price) || !imageUrl) {
-      console.error(
+      throw new Error(
         `PRODUCT_NOT_FOUND (title=${JSON.stringify(title)}, price=${priceRaw}, imageUrl=${JSON.stringify(imageUrl)})`,
       );
-      process.exit(1);
     }
 
     if (isShopee) {
@@ -382,14 +378,12 @@ async function main() {
         // pro catch genérico do main() e viraria uma mensagem de erro
         // genérica em vez do SHOPEE_API_ERROR documentado no runbook —
         // capturamos aqui e re-emitimos com o marcador certo.
-        console.error(`SHOPEE_API_ERROR (${String(err)})`);
-        process.exit(1);
+        throw new Error(`SHOPEE_API_ERROR (${String(err)})`);
       }
       const affiliateLink = shopeeJson?.data?.generateShortLink?.shortLink;
 
       if (!shopeeRes.ok || shopeeJson?.errors || !affiliateLink) {
-        console.error(`SHOPEE_API_ERROR (${JSON.stringify(shopeeJson?.errors ?? shopeeRes.status)})`);
-        process.exit(1);
+        throw new Error(`SHOPEE_API_ERROR (${JSON.stringify(shopeeJson?.errors ?? shopeeRes.status)})`);
       }
 
       console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'shopee', affiliateLink }));
@@ -409,9 +403,13 @@ async function main() {
     console.log(JSON.stringify({ title, price, imageUrl, marketplace: 'mercadolivre', affiliateLink }));
   } catch (err) {
     console.error(String(err));
-    process.exit(1);
+    exitCode = 1;
   } finally {
     await browser.close();
+  }
+
+  if (exitCode !== 0) {
+    process.exit(exitCode);
   }
 }
 
