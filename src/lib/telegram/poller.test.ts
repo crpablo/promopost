@@ -85,6 +85,7 @@ describe('pollTelegram', () => {
       discountedPrice: 45.5,
     });
     expect(deps.saveCursor).toHaveBeenCalledWith(14);
+    expect(deps.downloadMessagePhoto).toHaveBeenCalledWith(14, 'https://shopee.com.br/product/123456/789');
   });
 
   it('registra erro e avança o cursor mesmo assim quando a extração falha', async () => {
@@ -276,7 +277,7 @@ describe('pollTelegram', () => {
 
     await pollTelegram(deps);
 
-    expect(deps.downloadMessagePhoto).toHaveBeenCalledWith(55);
+    expect(deps.downloadMessagePhoto).toHaveBeenCalledWith(55, 'https://www.magazineluiza.com.br/produto-x/p/abc123/');
     expect(deps.callWebhook).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Carregador Portátil',
@@ -286,7 +287,33 @@ describe('pollTelegram', () => {
     );
   });
 
-  it('não baixa foto quando o link não é do Magalu', async () => {
+  it('baixa a foto e repassa title/originalPrice/photoUrl quando o link é da Shopee', async () => {
+    const deps = makeDeps({
+      fetchNewMessages: vi.fn().mockResolvedValue([{ id: 60, text: 'promo shopee' }]),
+      extractPromo: vi.fn().mockResolvedValue({
+        isPromo: true,
+        link: 'https://s.shopee.com.br/3AbCdEfG',
+        coupon: null,
+        discountedPrice: 45.5,
+        title: 'Fone Bluetooth XYZ',
+        originalPrice: 69.9,
+      }),
+      downloadMessagePhoto: vi.fn().mockResolvedValue('https://promopost.example.com/api/telegram-media?id=60'),
+    });
+
+    await pollTelegram(deps);
+
+    expect(deps.downloadMessagePhoto).toHaveBeenCalledWith(60, 'https://s.shopee.com.br/3AbCdEfG');
+    expect(deps.callWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Fone Bluetooth XYZ',
+        originalPrice: 69.9,
+        photoUrl: 'https://promopost.example.com/api/telegram-media?id=60',
+      }),
+    );
+  });
+
+  it('não baixa foto quando o link não é do Magalu nem da Shopee', async () => {
     const deps = makeDeps({
       fetchNewMessages: vi.fn().mockResolvedValue([{ id: 56, text: 'promo ML' }]),
       extractPromo: vi.fn().mockResolvedValue({

@@ -1,4 +1,5 @@
 import { isMagaluLink } from '../magalu/affiliateLink';
+import { isShopeeLink } from '../shopee/affiliateLink';
 import type { PromoExtraction as PromoExtractionResult } from './extractPromo';
 
 export interface TelegramMessage {
@@ -19,7 +20,7 @@ export interface PollerDeps {
   loadCursor: () => Promise<number | null>;
   saveCursor: (messageId: number) => Promise<void>;
   extractPromo: (text: string) => Promise<PromoExtractionResult>;
-  downloadMessagePhoto: (messageId: number) => Promise<string | null>;
+  downloadMessagePhoto: (messageId: number, link: string) => Promise<string | null>;
   callWebhook: (body: {
     link: string;
     coupon?: string;
@@ -124,8 +125,8 @@ async function runPoll(deps: PollerDeps): Promise<PollResult> {
     }
 
     let photoUrl: string | undefined;
-    if (isMagaluLink(extraction.link)) {
-      photoUrl = (await deps.downloadMessagePhoto(message.id)) ?? undefined;
+    if (isMagaluLink(extraction.link) || isShopeeLink(extraction.link)) {
+      photoUrl = (await deps.downloadMessagePhoto(message.id, extraction.link)) ?? undefined;
     }
 
     try {
