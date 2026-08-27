@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import TikTokPostForm from './TikTokPostForm';
 
 export default async function AdminPage({
@@ -8,12 +9,7 @@ export default async function AdminPage({
   const { token } = await searchParams;
 
   if (!token || token !== process.env.ADMIN_TOKEN) {
-    return (
-      <main style={{ maxWidth: 640, margin: '0 auto', padding: '48px 24px' }}>
-        <h1>404</h1>
-        <p>Página não encontrada.</p>
-      </main>
-    );
+    notFound();
   }
 
   return (
