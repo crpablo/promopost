@@ -255,6 +255,17 @@ Conferir na conta do TikTok (o post vai estar privado, visível só logado nela)
 - `tiktok: {ok:false, error:'WEBHOOK_BASE_URL não configurado'}` — falta a variável `WEBHOOK_BASE_URL` (mesma usada pela seção 10.5), necessária pra montar a URL do `/api/tiktok-image-proxy`.
 - Erro de URL de imagem não permitida vindo da própria TikTok — o domínio do passo 11.1.6 ainda não foi verificado (a verificação pode levar um tempo pra propagar depois de configurada).
 
+### 11.6 Página admin para post manual (gravação de vídeo de review)
+
+O PromoPost não tem UI de usuário — toda postagem é disparada por webhook. Para gravar o vídeo demo exigido pela revisão de Produção da TikTok (mostrando o fluxo de Login Kit + Content Posting API), existe uma página interna em `/admin` que dispara `postToTikTok()` manualmente, sem esperar um webhook real.
+
+1. Configure `ADMIN_TOKEN` (uma string qualquer, só sua) nas variáveis de ambiente.
+2. Acesse `https://promopost.tobiestore.com.br/admin?token=<ADMIN_TOKEN>`. Sem o token certo na query string, a página mostra um "404" genérico — não revela que a ferramenta existe.
+3. O formulário já vem preenchido com um exemplo de URL de imagem, título e descrição — edite se quiser, e clique em "Publicar no TikTok".
+4. A página mostra o `postId` em caso de sucesso, ou a mensagem de erro crua da TikTok em caso de falha (mesma tabela de causas da seção 11.5 se aplica).
+
+Essa rota reaproveita o mesmo `postToTikTok()` e o mesmo proxy de imagem (`/api/tiktok-image-proxy`) do fluxo de produção — o que ela pula é só a origem do disparo (formulário em vez de webhook do Mercado Livre).
+
 ## 12. Shopee (opcional, sub-projeto separado)
 
 Cobre a captura automática de links da Shopee no mesmo canal Telegram já monitorado, publicando no blog e nas redes sociais igual já acontece com o Mercado Livre (ver `docs/superpowers/specs/2026-07-31-shopee-marketplace-design.md`).
