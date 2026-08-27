@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react';
 
 const EXEMPLO_IMAGEM =
-  'https://http2.mlstatic.com/D_NQ_NP_2X_856819-MLA45678901234_012026-F.webp';
+  'https://http2.mlstatic.com/D_NQ_NP_979197-MLB114050838517_072026-O-tnis-slip-on-iate-masculino-couro-confortavel.webp';
 
 type Resultado = { ok: true; postId: string } | { ok: false; error: string };
 
