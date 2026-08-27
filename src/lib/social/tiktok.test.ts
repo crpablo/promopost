@@ -234,7 +234,7 @@ describe('postToTikTok', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao publicar no TikTok: Imagem inválida',
+      'Falha ao publicar no TikTok: Imagem inválida (code: invalid_params)',
     );
   });
 

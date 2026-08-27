@@ -140,7 +140,8 @@ export async function postToTikTok(
   });
   const json = await res.json();
   if (!res.ok || json.error?.code !== 'ok' || !json.data?.publish_id) {
-    throw new Error(`Falha ao publicar no TikTok: ${json.error?.message ?? res.status}`);
+    const code = json.error?.code ? ` (code: ${json.error.code})` : '';
+    throw new Error(`Falha ao publicar no TikTok: ${json.error?.message ?? res.status}${code}`);
   }
 
   await waitForPublishComplete(json.data.publish_id, accessToken);
