@@ -5,18 +5,23 @@ function toErrorMessage(err: unknown): string {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let body: { token?: string; imageUrl?: string; title?: string; description?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return Response.json({ ok: false, error: 'JSON inválido' }, { status: 400 });
   }
 
-  if (!body.token || body.token !== process.env.ADMIN_TOKEN) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return Response.json({ ok: false, error: 'JSON inválido' }, { status: 400 });
+  }
+
+  const bodyObj = body as { token?: string; imageUrl?: string; title?: string; description?: string };
+  if (!bodyObj.token || bodyObj.token !== process.env.ADMIN_TOKEN) {
     return Response.json({ ok: false, error: 'não autorizado' }, { status: 401 });
   }
 
-  const { imageUrl, title, description } = body;
+  const { imageUrl, title, description } = bodyObj;
   if (!imageUrl || !title || !description) {
     return Response.json(
       { ok: false, error: 'Campos obrigatórios: imageUrl, title, description' },

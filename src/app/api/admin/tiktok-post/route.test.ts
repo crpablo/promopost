@@ -83,4 +83,20 @@ describe('POST /api/admin/tiktok-post', () => {
     expect(response.status).toBe(502);
     expect(json).toEqual({ ok: false, error: 'picture_size_check_failed' });
   });
+
+  it('retorna 400 quando o corpo JSON é null', async () => {
+    const response = await POST(makeRequest(null));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json).toEqual({ ok: false, error: 'JSON inválido' });
+    expect(postToTikTokMock).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 quando o corpo JSON é um array', async () => {
+    const response = await POST(makeRequest([]));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json).toEqual({ ok: false, error: 'JSON inválido' });
+    expect(postToTikTokMock).not.toHaveBeenCalled();
+  });
 });
