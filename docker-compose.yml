@@ -10,3 +10,20 @@ services:
       - ./data:/data
     ports:
       - "127.0.0.1:3000:3000"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=promopost
+      - POSTGRES_DB=promopost
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+volumes:
+  db-data:
