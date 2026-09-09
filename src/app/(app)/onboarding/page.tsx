@@ -1,0 +1,36 @@
+import { redirect } from 'next/navigation';
+import { auth } from '@/auth';
+import { getPool } from '@/lib/db/pool';
+import { createBusinessForUser } from '@/lib/db/businesses';
+
+export default async function OnboardingPage() {
+  async function createBusiness(formData: FormData) {
+    'use server';
+    const name = formData.get('name');
+    if (typeof name !== 'string' || !name.trim()) return;
+
+    const session = await auth();
+    if (!session?.user?.id) return;
+
+    await createBusinessForUser(getPool(), session.user.id, name.trim());
+    redirect('/dashboard');
+  }
+
+  return (
+    <main style={{ maxWidth: 400, margin: '0 auto', padding: '48px 24px', lineHeight: 1.6 }}>
+      <h1>Qual o nome da sua empresa?</h1>
+      <form action={createBusiness} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <input
+          type="text"
+          name="name"
+          placeholder="Nome da empresa"
+          required
+          style={{ padding: 8, boxSizing: 'border-box' }}
+        />
+        <button type="submit" style={{ padding: 12 }}>
+          Continuar
+        </button>
+      </form>
+    </main>
+  );
+}

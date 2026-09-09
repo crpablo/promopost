@@ -9,7 +9,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'database' },
   providers: [
     Nodemailer({
-      server: '',
+      server: 'smtp://unused.invalid', // never used: sendVerificationRequest is overridden below
       from: process.env.EMAIL_FROM ?? 'PromoPost <login@promopost.tobiestore.com.br>',
       async sendVerificationRequest({ identifier, url }) {
         await sendMagicLink({ to: identifier, url });
