@@ -1,40 +1,83 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execFileMock } = vi.hoisted(() => ({
-  execFileMock: vi.fn(),
+const { spawnMock } = vi.hoisted(() => ({
+  spawnMock: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
-  execFile: execFileMock,
+  spawn: spawnMock,
 }));
 
 vi.mock('../session/sessionStore', () => ({
   loadSession: vi.fn().mockResolvedValue(Buffer.from('{"cookies":[]}')),
 }));
 
-import { fetchProductAndAffiliateLink } from './affiliateLink';
+import { fetchProductAndAffiliateLink, runScript } from './affiliateLink';
 
-function mockExecFileSuccess(stdout: string) {
-  execFileMock.mockImplementation((_cmd, _args, _options, callback) => {
-    callback(null, stdout, '');
-  });
+const FAKE_PID = 4242;
+
+// Simula o child_process real retornado por spawn(): stdout/stderr como
+// streams próprios (EventEmitter) e o processo em si emitindo 'close' (ou
+// 'error') — mesmo formato que o node:child_process real usa.
+function createFakeChild() {
+  const child = new EventEmitter() as EventEmitter & {
+    pid: number;
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+  };
+  child.pid = FAKE_PID;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  return child;
 }
 
-function mockExecFileFailure(stderr: string) {
-  execFileMock.mockImplementation((_cmd, _args, _options, callback) => {
-    const err = Object.assign(new Error('Command failed'), { stderr });
-    callback(err, '', stderr);
+function mockSpawnSuccess(stdout: string) {
+  const child = createFakeChild();
+  spawnMock.mockImplementation(() => {
+    queueMicrotask(() => {
+      child.stdout.emit('data', Buffer.from(stdout));
+      child.emit('close', 0);
+    });
+    return child;
   });
+  return child;
+}
+
+function mockSpawnFailure(stderr: string) {
+  const child = createFakeChild();
+  spawnMock.mockImplementation(() => {
+    queueMicrotask(() => {
+      child.stderr.emit('data', Buffer.from(stderr));
+      child.emit('close', 1);
+    });
+    return child;
+  });
+  return child;
+}
+
+// Processo filho que nunca fecha sozinho — usado pra testar o caminho de
+// timeout (quem "termina" esse processo é o próprio runScript, matando o
+// grupo depois que o timer estoura).
+function mockSpawnHangs() {
+  const child = createFakeChild();
+  spawnMock.mockImplementation(() => child);
+  return child;
 }
 
 describe('fetchProductAndAffiliateLink', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.useRealTimers();
   });
 
   it('retorna produto e link de afiliado quando o script termina com sucesso', async () => {
-    mockExecFileSuccess(
+    mockSpawnSuccess(
       `${JSON.stringify({
         title: 'Fone de Ouvido Bluetooth XYZ',
         price: 149.9,
@@ -55,18 +98,18 @@ describe('fetchProductAndAffiliateLink', () => {
       },
       affiliateLink: 'https://meli.la/abc123',
     });
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(spawnMock).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining([expect.stringContaining('generate-link.playwright.mjs'), 'https://mercadolivre.com.br/MLB123']),
       expect.objectContaining({
         env: expect.objectContaining({ ML_SESSION_PATH: expect.any(String) }),
+        detached: true,
       }),
-      expect.any(Function),
     );
   });
 
   it('lança SessionExpiredError quando o script reporta SESSION_EXPIRED no stderr', async () => {
-    mockExecFileFailure('SESSION_EXPIRED');
+    mockSpawnFailure('SESSION_EXPIRED');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -74,7 +117,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança ProductNotFoundError quando o script reporta PRODUCT_NOT_FOUND no stderr', async () => {
-    mockExecFileFailure('PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)');
+    mockSpawnFailure('PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -82,7 +125,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança InvalidLinkError quando o script reporta MARKETPLACE_NOT_SUPPORTED no stderr', async () => {
-    mockExecFileFailure('MARKETPLACE_NOT_SUPPORTED (resolvido para: https://exemplo.com/outra-coisa)');
+    mockSpawnFailure('MARKETPLACE_NOT_SUPPORTED (resolvido para: https://exemplo.com/outra-coisa)');
 
     await expect(
       fetchProductAndAffiliateLink('https://go.promozone.ai/mercadolivre/PwQ6x6'),
@@ -90,7 +133,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança ListCouponError com o link de afiliado quando o script reporta isListCoupon:true (cupom de lista)', async () => {
-    mockExecFileSuccess(
+    mockSpawnSuccess(
       `${JSON.stringify({
         marketplace: 'mercadolivre',
         affiliateLink: 'https://mercadolivre.com/sec/xyz789',
@@ -107,7 +150,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança erro genérico quando isListCoupon:true mas affiliateLink está ausente ou inválido', async () => {
-    mockExecFileSuccess(
+    mockSpawnSuccess(
       `${JSON.stringify({
         marketplace: 'mercadolivre',
         isListCoupon: true,
@@ -120,7 +163,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança erro genérico quando o script falha por outro motivo', async () => {
-    mockExecFileFailure('TimeoutError: locator not found');
+    mockSpawnFailure('TimeoutError: locator not found');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -128,7 +171,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança erro quando a saída não é um JSON válido', async () => {
-    mockExecFileSuccess('not json');
+    mockSpawnSuccess('not json');
 
     await expect(
       fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123'),
@@ -136,7 +179,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('retorna produto da Amazon com marketplace correto quando o script termina com sucesso', async () => {
-    mockExecFileSuccess(
+    mockSpawnSuccess(
       `${JSON.stringify({
         title: 'Fone Bluetooth Amazon',
         price: 129.9,
@@ -152,7 +195,7 @@ describe('fetchProductAndAffiliateLink', () => {
   });
 
   it('lança erro quando o script reporta AMAZON_CREDENTIALS_MISSING no stderr', async () => {
-    mockExecFileFailure('AMAZON_CREDENTIALS_MISSING');
+    mockSpawnFailure('AMAZON_CREDENTIALS_MISSING');
 
     await expect(
       fetchProductAndAffiliateLink('https://www.amazon.com.br/dp/B08XYZ'),
@@ -161,7 +204,7 @@ describe('fetchProductAndAffiliateLink', () => {
 
   it('passa AMAZON_ASSOCIATE_TAG como env var pro processo filho', async () => {
     vi.stubEnv('AMAZON_ASSOCIATE_TAG', 'crpablo0d-20');
-    mockExecFileSuccess(
+    mockSpawnSuccess(
       `${JSON.stringify({
         title: 'Produto',
         price: 10,
@@ -173,14 +216,60 @@ describe('fetchProductAndAffiliateLink', () => {
 
     await fetchProductAndAffiliateLink('https://www.amazon.com.br/dp/X');
 
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(spawnMock).toHaveBeenCalledWith(
       'node',
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({ AMAZON_ASSOCIATE_TAG: 'crpablo0d-20' }),
       }),
-      expect.any(Function),
     );
   });
 
+  it('mata o grupo de processos do script (node + Chromium) depois que ele termina com sucesso', async () => {
+    mockSpawnSuccess(`${JSON.stringify({ title: 't', price: 1, imageUrl: 'https://x/y.jpg', affiliateLink: 'https://meli.la/x' })}\n`);
+
+    await fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123');
+
+    expect(process.kill).toHaveBeenCalledWith(-FAKE_PID, 'SIGKILL');
+  });
+
+  it('mata o grupo de processos do script mesmo quando ele termina com erro', async () => {
+    mockSpawnFailure('PRODUCT_NOT_FOUND (title=null, price=null, imageUrl=null)');
+
+    await expect(fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123')).rejects.toThrow();
+
+    expect(process.kill).toHaveBeenCalledWith(-FAKE_PID, 'SIGKILL');
+  });
+
+  it('mata o grupo de processos e rejeita quando o script estoura o timeout sem terminar', async () => {
+    vi.useFakeTimers();
+    mockSpawnHangs();
+
+    // Chama runScript direto (não fetchProductAndAffiliateLink) pra não ter
+    // I/O real (mkdtemp/writeFile) de permeio antes do timer ser criado —
+    // o Promise executor roda o `spawn` + `setTimeout` de forma síncrona,
+    // então o fake timer já está registrado assim que essa chamada retorna.
+    const resultPromise = runScript('https://mercadolivre.com.br/MLB123', process.env);
+    // silencia unhandled rejection warning enquanto o timer não estoura
+    resultPromise.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+
+    await expect(resultPromise).rejects.toThrow();
+    expect(process.kill).toHaveBeenCalledWith(-FAKE_PID, 'SIGKILL');
+  });
+
+  it('não tenta matar o grupo de processos quando o script nunca recebeu um pid (spawn falhou)', async () => {
+    const child = createFakeChild();
+    // @ts-expect-error simula spawn() que falha antes de atribuir pid (ENOENT etc)
+    child.pid = undefined;
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => child.emit('error', new Error('spawn ENOENT')));
+      return child;
+    });
+
+    await expect(fetchProductAndAffiliateLink('https://mercadolivre.com.br/MLB123')).rejects.toThrow();
+
+    expect(process.kill).not.toHaveBeenCalled();
+  });
 });

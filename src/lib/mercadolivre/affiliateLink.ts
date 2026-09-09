@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,23 +16,80 @@ const SCRIPT_PATH = fileURLToPath(new URL('./generate-link.playwright.mjs', impo
 const EMPTY_STORAGE_STATE = Buffer.from(JSON.stringify({ cookies: [], origins: [] }));
 const EXEC_TIMEOUT_MS = 4 * 60 * 1000;
 
-function runScript(
+// Mata o grupo de processos inteiro do script (o `node` filho e qualquer
+// processo que ele tenha aberto, inclusive o Chromium do Playwright) — não
+// só o processo filho direto. Necessário porque o `node` filho roda
+// `spawn(..., { detached: true })`, o que faz dele o líder de um novo grupo
+// (pgid == pid); matar com pid negativo mata o grupo inteiro de uma vez.
+// Sem isso, um Chromium que não foi fechado corretamente pelo script (ex:
+// `chromium.launch()` falha antes do try/finally que fecharia o browser, ou
+// o `node` filho é encerrado à força pelo timeout abaixo) fica órfão e
+// nunca mais é encerrado — foi o que causou o vazamento de milhares de
+// processos `chrome-headless` órfãos, esgotando o limite de processos do
+// container em produção (2026-09-09).
+function killProcessGroup(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    // Grupo já não existe (processo já tinha encerrado sozinho) — nada a fazer.
+  }
+}
+
+// Exportada só pra teste direto do comportamento de timeout/kill de grupo
+// de processos, sem precisar passar pelo I/O real de sessão/tempdir que
+// `fetchProductAndAffiliateLink` faz antes de chegar aqui.
+export function runScript(
   productLink: string,
   env: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string }> {
   return new Promise((resolve, reject) => {
-    execFile(
-      'node',
-      [SCRIPT_PATH, productLink],
-      { timeout: EXEC_TIMEOUT_MS, env },
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(Object.assign(err, { stderr: stderr ?? '' }));
-          return;
-        }
-        resolve({ stdout: stdout ?? '' });
-      },
-    );
+    const child = spawn('node', [SCRIPT_PATH, productLink], { env, detached: true });
+
+    let stdout = '';
+    let stderr = '';
+    // A promise só pode assentar uma vez — guarda contra o timeout e o
+    // 'close' tentarem resolver/rejeitar em sequência (ex: o processo
+    // finalmente fecha logo depois do SIGKILL do timeout).
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      killProcessGroup(child.pid);
+      if (settled) return;
+      settled = true;
+      // Rejeita direto, sem esperar o 'close' — matar o grupo garante que o
+      // processo vai morrer, mas não garante que o SO já reaproveitou o pid
+      // a tempo; o pipeline não pode ficar preso esperando isso.
+      reject(Object.assign(new Error(`Timeout ao gerar link de afiliado (${EXEC_TIMEOUT_MS}ms)`), { stderr }));
+    }, EXEC_TIMEOUT_MS);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk;
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      killProcessGroup(child.pid);
+      if (settled) return;
+      settled = true;
+      reject(Object.assign(err, { stderr }));
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      killProcessGroup(child.pid);
+      if (settled) return;
+      settled = true;
+
+      if (code !== 0) {
+        reject(Object.assign(new Error('Command failed'), { stderr }));
+        return;
+      }
+      resolve({ stdout });
+    });
   });
 }
 

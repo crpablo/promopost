@@ -109,27 +109,36 @@ async function main() {
 
   const storageState = JSON.parse(readFileSync(process.env.ML_SESSION_PATH, 'utf8'));
 
-  const browser = await chromium.launch({
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-    ],
-  });
-  const context = await browser.newContext({
-    storageState,
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    viewport: { width: 1280, height: 900 },
-    locale: 'pt-BR',
-  });
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-  const page = await context.newPage();
-
+  // Declarado fora do try pra ficar acessível no finally, mas a chamada que
+  // efetivamente sobe o Chromium (chromium.launch) roda DENTRO do try —
+  // antes dessa mudança ela rodava fora, então quando falhava (o erro real
+  // de produção: "Target page, context or browser has been closed", sob
+  // pressão de memória/processos) o `finally { browser.close() }` nunca era
+  // alcançado e o processo do Chromium que chegou a subir ficava órfão pra
+  // sempre. Ver killProcessGroup em affiliateLink.ts pro cinto-e-suspensório
+  // (mata o grupo de processos inteiro mesmo se isso aqui falhar de novo).
+  let browser;
   let exitCode = 0;
   try {
+    browser = await chromium.launch({
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+      ],
+    });
+    const context = await browser.newContext({
+      storageState,
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 900 },
+      locale: 'pt-BR',
+    });
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    const page = await context.newPage();
+
     // 0. Resolve redirect (HTTP ou client-side) e confere destino final
     await page.goto(productLink, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(1500);
@@ -326,7 +335,11 @@ async function main() {
     console.error(String(err));
     exitCode = 1;
   } finally {
-    await browser.close();
+    // `browser` pode nunca ter sido atribuído (chromium.launch falhou) e
+    // browser.close() pode ela mesma falhar (browser já morto/travado) —
+    // nenhum dos dois pode impedir o processo de sair e liberar o pid pro
+    // runScript (em affiliateLink.ts) reaproveitar/matar o grupo.
+    await browser?.close().catch(() => {});
   }
 
   if (exitCode !== 0) {
