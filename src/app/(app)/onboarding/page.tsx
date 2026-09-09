@@ -20,7 +20,14 @@ export default async function OnboardingPage() {
     const session = await auth();
     if (!session?.user?.id) return;
 
-    await createBusinessForUser(getPool(), session.user.id, name.trim());
+    try {
+      await createBusinessForUser(getPool(), session.user.id, name.trim());
+    } catch {
+      // Duas abas submetendo ao mesmo tempo podem ambas passar da checagem
+      // no topo da página e ambas chamarem createBusinessForUser — a perdedora
+      // esbarra na constraint unique de owner_user_id. Nesse caso a empresa já
+      // foi criada pela outra aba, então /dashboard já mostra o resultado certo.
+    }
     redirect('/dashboard');
   }
 

@@ -1,14 +1,16 @@
 import type { Pool } from 'pg';
 
 export interface Business {
-  id: number;
+  // pg retorna bigint (o tipo de businesses.id) como string, não number —
+  // evita perda de precisão além de Number.MAX_SAFE_INTEGER.
+  id: string;
   ownerUserId: string;
   name: string;
   createdAt: Date;
 }
 
 function toBusiness(row: {
-  id: number;
+  id: string;
   owner_user_id: string;
   name: string;
   created_at: Date;
