@@ -18,6 +18,20 @@ describe('isShopeeLink', () => {
   it('retorna false pra URL malformada em vez de lançar', () => {
     expect(isShopeeLink('não é uma url')).toBe(false);
   });
+
+  it('reconhece o encurtador go.promozone.ai com prefixo /shopee/ (formato usado atualmente no canal)', () => {
+    expect(isShopeeLink('https://go.promozone.ai/shopee/i5xwnv')).toBe(true);
+  });
+
+  it('rejeita go.promozone.ai com prefixo de outro marketplace', () => {
+    expect(isShopeeLink('https://go.promozone.ai/mercadolivre/281iL6')).toBe(false);
+    expect(isShopeeLink('https://go.promozone.ai/magalu/DhB9GA')).toBe(false);
+    expect(isShopeeLink('https://go.promozone.ai/amz/9BCkIs')).toBe(false);
+  });
+
+  it('rejeita go.promozone.ai sem nenhum prefixo de marketplace reconhecido', () => {
+    expect(isShopeeLink('https://go.promozone.ai/')).toBe(false);
+  });
 });
 
 describe('calculateShopeeSignature', () => {

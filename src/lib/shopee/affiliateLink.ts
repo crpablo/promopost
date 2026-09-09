@@ -2,7 +2,22 @@ import { createHash } from 'node:crypto';
 
 export function isShopeeLink(link: string): boolean {
   try {
-    return /(^|\.)shopee\.com\.br$/i.test(new URL(link).hostname);
+    const url = new URL(link);
+    if (/(^|\.)shopee\.com\.br$/i.test(url.hostname)) {
+      return true;
+    }
+    // O canal do Telegram passou a mandar cupons da Shopee encurtados pelo
+    // encurtador próprio do canal (go.promozone.ai/shopee/<codigo>) em vez
+    // do encurtador oficial da Shopee (s.shopee.com.br) — sem esse caso,
+    // esses links caíam no fallback genérico via Playwright (o mesmo do
+    // Mercado Livre/Amazon), que ao seguir o redirect esbarra no bot-check
+    // da Shopee (só dispara em navegação de browser de verdade, não no
+    // fetch simples usado por buildShopeeAffiliateLink) em vez de usar a
+    // API oficial. go.promozone.ai encurta pra outros marketplaces também
+    // (ex: /mercadolivre/, /magalu/, /amz/) usando o mesmo domínio, então o
+    // prefixo do path é o único jeito de saber que ESSE link é da Shopee
+    // sem precisar seguir o redirect (o que gera outro request de rede).
+    return /(^|\.)go\.promozone\.ai$/i.test(url.hostname) && /^\/shopee\//i.test(url.pathname);
   } catch {
     return false;
   }
