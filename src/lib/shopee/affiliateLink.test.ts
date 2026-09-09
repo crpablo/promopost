@@ -104,4 +104,67 @@ describe('buildShopeeAffiliateLink', () => {
       buildShopeeAffiliateLink('https://s.shopee.com.br/x', 'app1', 'secret123'),
     ).rejects.toThrow('SHOPEE_API_ERROR');
   });
+
+  // go.promozone.ai/shopee/<codigo> não faz redirect HTTP (a página faz
+  // window.location.replace via JS, um fetch simples não segue isso) — por
+  // isso precisa de um passo extra: resolver o código via API própria do
+  // promozone.ai (achada no bundle JS da SPA, endpoint hardcoded em
+  // VITE_RESOLVE_API_BASE_URL) antes de seguir o fluxo normal de redirect.
+  it('resolve o encurtador go.promozone.ai via API própria antes de seguir o fluxo normal', async () => {
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ destinationUrl: 'https://s.shopee.com.br/3B7HQY8QPN' }),
+    });
+    fetchMock.mockResolvedValueOnce({ url: 'https://shopee.com.br/produto-real-i.789.012' });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { generateShortLink: { shortLink: 'https://s.shopee.com.br/novo-link' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await buildShopeeAffiliateLink('https://go.promozone.ai/shopee/t8o87K', 'app1', 'secret123');
+
+    expect(result).toBe('https://s.shopee.com.br/novo-link');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://link-shortener-501307668672.southamerica-east1.run.app/resolve/t8o87K',
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://s.shopee.com.br/3B7HQY8QPN', { redirect: 'follow' });
+    const graphqlBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string);
+    expect(graphqlBody.variables.input.originUrl).toBe('https://shopee.com.br/produto-real-i.789.012');
+  });
+
+  it('não chama a API de resolve do promozone quando o link já é do encurtador oficial da Shopee', async () => {
+    const fetchMock = mockFetchSequence('https://shopee.com.br/produto-real', {
+      ok: true,
+      body: { data: { generateShortLink: { shortLink: 'https://s.shopee.com.br/y' } } },
+    });
+
+    await buildShopeeAffiliateLink('https://s.shopee.com.br/x', 'app1', 'secret123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('lança SHOPEE_REDIRECT_ERROR quando a API de resolve do promozone não retorna destinationUrl', async () => {
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      buildShopeeAffiliateLink('https://go.promozone.ai/shopee/xyz', 'app1', 'secret123'),
+    ).rejects.toThrow('SHOPEE_REDIRECT_ERROR');
+  });
+
+  it('lança SHOPEE_REDIRECT_ERROR quando a API de resolve do promozone responde com erro HTTP', async () => {
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      buildShopeeAffiliateLink('https://go.promozone.ai/shopee/xyz', 'app1', 'secret123'),
+    ).rejects.toThrow('SHOPEE_REDIRECT_ERROR');
+  });
 });

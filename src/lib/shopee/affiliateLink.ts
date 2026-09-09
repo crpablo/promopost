@@ -40,13 +40,39 @@ export function calculateShopeeSignature(
     .digest('hex');
 }
 
-// Resolve o link curto da Shopee (s.shopee.com.br/xxx, formato sempre usado
-// nas mensagens do canal) pra URL canônica do produto, e gera o link de
-// afiliado via API oficial (GraphQL, assinada com SHA256). A resolução do
-// link curto é um redirect HTTP simples (confirmado via curl -sIL, 301, sem
-// disparar o bot-check de JS da Shopee — esse só age em navegação de browser
-// de verdade) — por isso um fetch simples com redirect:'follow' basta, sem
-// precisar de Playwright.
+// API de resolução do encurtador PRÓPRIO do canal (go.promozone.ai) —
+// achada dentro do bundle JS da SPA que ele serve (window.location.replace
+// via JS, não um redirect HTTP, então um fetch simples não segue; a URL do
+// endpoint vem hardcoded no bundle via VITE_RESOLVE_API_BASE_URL, confirmado
+// testando manualmente: GET .../resolve/<codigo> devolve
+// {"destinationUrl": "https://s.shopee.com.br/..."}). Diferente do
+// encurtador OFICIAL da Shopee (s.shopee.com.br), que faz um 301 normal.
+const PROMOZONE_RESOLVE_API_BASE = 'https://link-shortener-501307668672.southamerica-east1.run.app/resolve';
+
+function isPromozoneShortLink(url: URL): boolean {
+  return /(^|\.)go\.promozone\.ai$/i.test(url.hostname);
+}
+
+async function resolvePromozoneShortLink(url: URL): Promise<string> {
+  const code = url.pathname.split('/').filter(Boolean).pop();
+  const res = await fetch(`${PROMOZONE_RESOLVE_API_BASE}/${encodeURIComponent(code ?? '')}`, {
+    signal: AbortSignal.timeout(10000),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || typeof json?.destinationUrl !== 'string') {
+    throw new Error(`falha ao resolver encurtador do promozone.ai (status ${res.status})`);
+  }
+  return json.destinationUrl;
+}
+
+// Resolve o link curto da Shopee (s.shopee.com.br/xxx, formato usado nas
+// mensagens do canal — ou go.promozone.ai/shopee/xxx, o encurtador próprio
+// do canal, resolvido antes via resolvePromozoneShortLink) pra URL canônica
+// do produto, e gera o link de afiliado via API oficial (GraphQL, assinada
+// com SHA256). A resolução do link curto OFICIAL é um redirect HTTP simples
+// (confirmado via curl -sIL, 301, sem disparar o bot-check de JS da Shopee —
+// esse só age em navegação de browser de verdade) — por isso um fetch
+// simples com redirect:'follow' basta, sem precisar de Playwright.
 export async function buildShopeeAffiliateLink(
   productLink: string,
   appId: string,
@@ -54,7 +80,11 @@ export async function buildShopeeAffiliateLink(
 ): Promise<string> {
   let resolvedUrl: string;
   try {
-    const redirectRes = await fetch(productLink, { redirect: 'follow' });
+    const parsedProductLink = new URL(productLink);
+    const linkToFollow = isPromozoneShortLink(parsedProductLink)
+      ? await resolvePromozoneShortLink(parsedProductLink)
+      : productLink;
+    const redirectRes = await fetch(linkToFollow, { redirect: 'follow' });
     resolvedUrl = redirectRes.url;
   } catch (err) {
     throw new Error(`SHOPEE_REDIRECT_ERROR (${String(err)})`);
