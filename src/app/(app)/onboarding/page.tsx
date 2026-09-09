@@ -1,9 +1,17 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db/pool';
-import { createBusinessForUser } from '@/lib/db/businesses';
+import { createBusinessForUser, getBusinessForUser } from '@/lib/db/businesses';
 
 export default async function OnboardingPage() {
+  const session = await auth();
+  if (session?.user?.id) {
+    const existingBusiness = await getBusinessForUser(getPool(), session.user.id);
+    if (existingBusiness) {
+      redirect('/dashboard');
+    }
+  }
+
   async function createBusiness(formData: FormData) {
     'use server';
     const name = formData.get('name');
