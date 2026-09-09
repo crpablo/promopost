@@ -300,3 +300,34 @@ Se falhar, confira os logs (`vercel logs`) — o erro real da chamada assinada a
 - `Falha ao gerar link de afiliado da Shopee: SHOPEE_API_ERROR (...)` — o corpo do erro retornado pela Shopee aparece entre parênteses. Causas prováveis: assinatura incorreta (revise `calculateShopeeSignature` e o formato exato do header — a documentação pública pode ter mudado), domínio da API errado (repita o passo 12.2), ou timestamp fora da janela de validade (o request demorou demais entre calcular a assinatura e a Shopee recebê-la — improvável, mas possível sob rede lenta).
 - `Produto não encontrado na página do Mercado Livre: PRODUCT_NOT_FOUND (...)` **para um link da Shopee** — apesar da mensagem mencionar "Mercado Livre" (herdada do código original, ainda não generalizada), esse erro também dispara pra produtos Shopee cujas meta tags não bateram com os seletores usados (`og:image`, `meta[itemprop="price"]`) — o formato exato da página da Shopee ainda não foi confirmado contra o site real; pode precisar ajustar os seletores em `generate-link.playwright.mjs`.
 - Link não é reconhecido como Shopee (`MARKETPLACE_NOT_SUPPORTED`) mesmo sendo um link Shopee válido — confira se o hostname resolvido bate com `shopee.com.br` (subdomínios inclusive); domínios regionais diferentes (ex: `.co.id` de outros países) não são reconhecidos por design.
+
+## 13. Fundação multi-tenant — cadastro/login de empresas (Auth.js + Postgres)
+
+Cobre o cadastro/login por magic link (`/login`, `/onboarding`, `/dashboard`) via Auth.js, com sessão em banco (`strategy: 'database'`) e um Postgres self-hosted novo (serviço `db` no `docker-compose.yml`) — ver spec em `docs/superpowers/specs/2026-09-03-multitenant-foundation-design.md`.
+
+**Bloqueado até alguém provisionar Resend:** este projeto ainda não tem conta Resend nem domínio de envio verificado. Sem `RESEND_API_KEY`/`EMAIL_FROM` configurados com uma conta real, o envio do magic link falha sempre — a feature inteira fica indisponível em produção até isso ser resolvido.
+
+### 13.1 Bootstrap único num VPS novo
+
+1. **`POSTGRES_PASSWORD`** — gere uma senha aleatória (ex: `openssl rand -hex 24`) e defina no `.env` do servidor.
+2. **`DATABASE_URL`** — mesma senha acima, no formato `postgresql://promopost:<senha>@db:5432/promopost` (host `db`, o nome do serviço no Compose — não `localhost`, o app fala com o Postgres só pela rede interna do Compose).
+3. **`AUTH_SECRET`** — gere com `openssl rand -hex 32`.
+4. **`AUTH_URL`** — a URL pública do app (ex: `https://promopost.tobiestore.com.br`). Sem isso, `trustHost` do Auth.js fica `false` em produção e todo `auth()`/`signIn()` falha com `UntrustedHost` (ver comentário em `src/auth.ts` e `.env.example`).
+5. **`RESEND_API_KEY`/`EMAIL_FROM`** — conta Resend (resend.com) com um domínio de envio verificado. **Ainda não provisionado neste projeto** — ver aviso no topo desta seção.
+6. Suba os containers e aplique a migration (o `deploy.sh` já faz isso automaticamente a partir de agora — ver 13.2 — mas pra um bootstrap manual num servidor novo antes do primeiro `deploy.sh`):
+   ```bash
+   docker compose up -d --build
+   docker compose exec -T db psql -U promopost -d promopost < db/migrations/001_init.sql
+   ```
+
+### 13.2 Deploy normal
+
+`./deploy.sh` já aplica a migration automaticamente a cada deploy, depois de subir os containers — `db/migrations/001_init.sql` usa `create table/index if not exists`, então rodar de novo em cima de um banco já migrado não tem efeito (idempotente). Não precisa rodar nada manualmente pra migrations em deploys subsequentes.
+
+### 13.3 Acesso direto ao Postgres (debug manual)
+
+O Postgres não expõe porta pro host (só é acessível pela rede interna do Compose, `db:5432`) — evita colisão com o Postgres de outro projeto (`corretor-milionario`) que também roda nesse VPS. Pra um `psql` manual:
+
+```bash
+docker compose exec db psql -U promopost -d promopost
+```
