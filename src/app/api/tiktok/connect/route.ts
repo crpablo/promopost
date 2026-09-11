@@ -20,7 +20,7 @@ export async function GET(request: Request): Promise<Response> {
   const params = new URLSearchParams({
     client_key: clientKey,
     response_type: 'code',
-    scope: 'user.info.basic,video.publish',
+    scope: 'video.publish',
     redirect_uri: redirectUri,
     state,
   });

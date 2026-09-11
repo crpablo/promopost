@@ -33,7 +33,7 @@ describe('GET /api/tiktok/connect', () => {
     const location = response.headers.get('location');
     expect(location).toContain('https://www.tiktok.com/v2/auth/authorize/?');
     expect(location).toContain('client_key=fake-client-key');
-    expect(location).toContain('scope=user.info.basic%2Cvideo.publish');
+    expect(location).toContain('scope=video.publish');
     expect(location).toContain(
       'redirect_uri=https%3A%2F%2Fpromopost.example.com%2Fapi%2Ftiktok%2Fcallback',
     );

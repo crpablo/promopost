@@ -317,12 +317,14 @@ Cobre o cadastro/login por magic link (`/login`, `/onboarding`, `/dashboard`) vi
 6. Suba os containers e aplique a migration (o `deploy.sh` já faz isso automaticamente a partir de agora — ver 13.2 — mas pra um bootstrap manual num servidor novo antes do primeiro `deploy.sh`):
    ```bash
    docker compose up -d --build
-   docker compose exec -T db psql -U promopost -d promopost < db/migrations/001_init.sql
+   for f in db/migrations/*.sql; do
+     docker compose exec -T db psql -U promopost -d promopost < "$f"
+   done
    ```
 
 ### 13.2 Deploy normal
 
-`./deploy.sh` já aplica a migration automaticamente a cada deploy, depois de subir os containers — `db/migrations/001_init.sql` usa `create table/index if not exists`, então rodar de novo em cima de um banco já migrado não tem efeito (idempotente). Não precisa rodar nada manualmente pra migrations em deploys subsequentes.
+`./deploy.sh` já aplica todas as migrations de `db/migrations/` automaticamente a cada deploy, em ordem, depois de subir os containers — todas usam `create table/index if not exists`, então rodar de novo em cima de um banco já migrado não tem efeito (idempotente). Não precisa rodar nada manualmente pra migrations em deploys subsequentes.
 
 ### 13.3 Acesso direto ao Postgres (debug manual)
 
