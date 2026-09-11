@@ -24,6 +24,14 @@ describe('GET /api/tiktok/connect', () => {
     expect(response.headers.get('location')).toBe('https://promopost.example.com/login');
   });
 
+  it('usa AUTH_URL como base do redirect em vez do host de request.url (atrás de proxy, request.url reflete o endereço interno do container, não o domínio público)', async () => {
+    vi.stubEnv('AUTH_URL', 'https://promopost.tobiestore.com.br');
+    authMock.mockResolvedValue(null);
+    const request = new Request('http://localhost:3000/api/tiktok/connect');
+    const response = await GET(request);
+    expect(response.headers.get('location')).toBe('https://promopost.tobiestore.com.br/login');
+  });
+
   it('com sessão, redireciona pra URL de autorização da TikTok e seta o cookie de state', async () => {
     stubEnv();
     authMock.mockResolvedValue({ user: { id: 'user-1' } });

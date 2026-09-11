@@ -68,6 +68,25 @@ describe('GET /api/tiktok/callback', () => {
     expect(response.headers.get('location')).toBe('https://promopost.example.com/dashboard');
   });
 
+  it('usa AUTH_URL como base do redirect final em vez do host de request.url (atrás de proxy, request.url reflete o endereço interno do container, não o domínio público)', async () => {
+    stubEnv();
+    vi.stubEnv('AUTH_URL', 'https://promopost.tobiestore.com.br');
+    authMock.mockResolvedValue({ user: { id: 'user-1' } });
+    exchangeTikTokTokenMock.mockResolvedValue({ accessToken: 'at', refreshToken: 'rt', expiresAt: 1234567890000 });
+    getBusinessForUserMock.mockResolvedValue({
+      id: 'biz-1',
+      ownerUserId: 'user-1',
+      name: 'Loja',
+      createdAt: new Date(),
+    });
+    saveTikTokAccountForBusinessMock.mockResolvedValue({});
+
+    const request = makeRequest('http://localhost:3000/api/tiktok/callback?code=abc&state=xyz', 'xyz');
+    const response = await GET(request);
+
+    expect(response.headers.get('location')).toBe('https://promopost.tobiestore.com.br/dashboard');
+  });
+
   it('quando a TikTok manda error, redireciona pro dashboard com tiktok_error=1', async () => {
     authMock.mockResolvedValue({ user: { id: 'user-1' } });
     const request = makeRequest('https://promopost.example.com/api/tiktok/callback?error=access_denied');

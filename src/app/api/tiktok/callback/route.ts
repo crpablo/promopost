@@ -18,9 +18,17 @@ function readCookie(request: Request, name: string): string | undefined {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  // Atrás do nginx, `request.url` reflete o endereço interno do container
+  // (http://localhost:3000), não o domínio público — usa AUTH_URL (já
+  // exigido pelo Auth.js em produção) como base pros redirects que saem
+  // daqui, com request.url só como fallback pra dev local/testes. Ler os
+  // searchParams da própria request ainda usa request.url normalmente, já
+  // que isso não constrói uma URL pública nova, só lê a que já chegou.
+  const baseUrl = process.env.AUTH_URL ?? request.url;
+
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/login', baseUrl));
   }
 
   const { searchParams } = new URL(request.url);
@@ -30,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
   const cookieState = readCookie(request, STATE_COOKIE);
 
   function failResponse(): Response {
-    const response = NextResponse.redirect(new URL('/dashboard?tiktok_error=1', request.url));
+    const response = NextResponse.redirect(new URL('/dashboard?tiktok_error=1', baseUrl));
     response.cookies.delete(STATE_COOKIE);
     return response;
   }
@@ -63,7 +71,7 @@ export async function GET(request: Request): Promise<Response> {
     return failResponse();
   }
 
-  const response = NextResponse.redirect(new URL('/dashboard', request.url));
+  const response = NextResponse.redirect(new URL('/dashboard', baseUrl));
   response.cookies.delete(STATE_COOKIE);
   return response;
 }
