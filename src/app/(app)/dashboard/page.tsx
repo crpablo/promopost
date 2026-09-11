@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { getPool } from '@/lib/db/pool';
 import { getBusinessForUser } from '@/lib/db/businesses';
 import { getTikTokAccountForBusiness } from '@/lib/db/tiktokAccounts';
+import TikTokPostForm from './TikTokPostForm';
 
 export default async function DashboardPage({
   searchParams,
@@ -36,6 +37,7 @@ export default async function DashboardPage({
           <a href="/api/tiktok/connect" style={{ display: 'inline-block', padding: 12 }}>
             Reconectar
           </a>
+          <TikTokPostForm />
         </>
       ) : (
         <a href="/api/tiktok/connect" style={{ display: 'inline-block', padding: 12 }}>
