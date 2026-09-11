@@ -1,4 +1,4 @@
-import { postToTikTok } from '@/lib/social/tiktok';
+import { getValidAccessToken, postToTikTok } from '@/lib/social/tiktok';
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -36,7 +36,8 @@ export async function POST(request: Request): Promise<Response> {
   const proxiedImageUrl = `${baseUrl}/api/tiktok-image-proxy?${new URLSearchParams({ imageUrl }).toString()}`;
 
   try {
-    const result = await postToTikTok(proxiedImageUrl, title, description);
+    const accessToken = await getValidAccessToken();
+    const result = await postToTikTok(accessToken, proxiedImageUrl, title, description);
     return Response.json({ ok: true, postId: result.postId });
   } catch (err) {
     return Response.json({ ok: false, error: toErrorMessage(err) }, { status: 502 });

@@ -10,7 +10,7 @@ import { publishArticle } from '@/lib/shopify/publisher';
 import { buildSocialCaption } from '@/lib/social/caption';
 import { postToFacebook } from '@/lib/social/facebook';
 import { postStoryToInstagram, postToInstagram } from '@/lib/social/instagram';
-import { postToTikTok } from '@/lib/social/tiktok';
+import { getValidAccessToken, postToTikTok } from '@/lib/social/tiktok';
 import { postToTelegramGroups } from '@/lib/social/telegramGroups';
 import type { TelegramGroupsResult } from '@/lib/social/telegramGroups';
 import { deleteFile } from '@/lib/storage/localStore';
@@ -154,9 +154,10 @@ async function postToSocialNetworks(
     if (!isTikTokConfigured()) return NAO_CONFIGURADO;
     if (captionError) return captionError;
     try {
+      const accessToken = await getValidAccessToken();
       const proxiedImageUrl = buildTikTokImageProxyUrl(product);
       const title = product.title.slice(0, 90);
-      const r = await postToTikTok(proxiedImageUrl, title, caption as string);
+      const r = await postToTikTok(accessToken, proxiedImageUrl, title, caption as string);
       return { ok: true, postId: r.postId };
     } catch (err) {
       console.error('Erro ao postar no TikTok:', err);
@@ -246,7 +247,8 @@ async function postCouponToSocialNetworks(
   const tiktokPromise: Promise<SocialResult> = (async () => {
     if (!isTikTokConfigured()) return NAO_CONFIGURADO;
     try {
-      const r = await postToTikTok(couponImageUrl, articleTitle.slice(0, 90), caption);
+      const accessToken = await getValidAccessToken();
+      const r = await postToTikTok(accessToken, couponImageUrl, articleTitle.slice(0, 90), caption);
       return { ok: true, postId: r.postId };
     } catch (err) {
       console.error('Erro ao postar cupom no TikTok:', err);

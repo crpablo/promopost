@@ -16,7 +16,7 @@ vi.mock('./tiktokTokenStore', async (importOriginal) => {
   };
 });
 
-import { postToTikTok } from './tiktok';
+import { getValidAccessToken, postToTikTok } from './tiktok';
 
 function stubEnv() {
   vi.stubEnv('TIKTOK_CLIENT_KEY', 'fake-client-key');
@@ -39,17 +39,113 @@ function creatorInfoResponse(privacyLevelOptions: string[], commentDisabled = fa
   };
 }
 
+describe('getValidAccessToken', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('retorna o token salvo, sem renovar, quando ele ainda não está perto de expirar', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+
+    const token = await getValidAccessToken();
+
+    expect(token).toBe('valid-access-token');
+    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+  });
+
+  it('renova o token quando ele está perto de expirar', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'old-access-token',
+      refreshToken: 'old-refresh-token',
+      expiresAt: Date.now() + 60 * 1000, // expira em 1min — precisa renovar
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 86400,
+        }),
+      }),
+    );
+
+    const token = await getValidAccessToken();
+
+    expect(token).toBe('new-access-token');
+    expect(saveTikTokTokensMock).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: 'new-access-token', refreshToken: 'new-refresh-token' }),
+    );
+  });
+
+  it('lança erro quando a renovação do token falha', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'old-access-token',
+      refreshToken: 'expired-refresh-token',
+      expiresAt: Date.now() - 1000, // já expirado
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'invalid_grant', error_description: 'Refresh token expirado' }),
+      }),
+    );
+
+    await expect(getValidAccessToken()).rejects.toThrow('Falha ao renovar token do TikTok');
+  });
+
+  it('lança erro quando não existe token salvo (nunca rodou o bootstrap)', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue(null);
+
+    await expect(getValidAccessToken()).rejects.toThrow('Token do TikTok não configurado');
+  });
+
+  it('lança erro quando faltam variáveis de ambiente', async () => {
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'x',
+      refreshToken: 'y',
+      expiresAt: Date.now() - 1000, // força o caminho de renovação, que precisa das env vars
+    });
+
+    await expect(getValidAccessToken()).rejects.toThrow('Variáveis de ambiente do TikTok ausentes');
+  });
+
+  it('lança erro e não salva quando a renovação retorna 200 sem refresh_token (evita corromper o token store)', async () => {
+    stubEnv();
+    loadTikTokTokensMock.mockResolvedValue({
+      accessToken: 'old-access-token',
+      refreshToken: 'old-refresh-token',
+      expiresAt: Date.now() + 60 * 1000, // perto de expirar — força renovação
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'new-access-token', expires_in: 86400 }), // sem refresh_token
+      }),
+    );
+
+    await expect(getValidAccessToken()).rejects.toThrow('Falha ao renovar token do TikTok');
+    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('postToTikTok', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.clearAllMocks();
-    vi.useRealTimers();
   });
 
-  it('posta com o token salvo, sem renovar, quando ele ainda não está perto de expirar', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
+  it('posta com o token recebido', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(creatorInfoResponse(['PUBLIC_TO_EVERYONE', 'SELF_ONLY']))
@@ -63,10 +159,9 @@ describe('postToTikTok', () => {
       });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda completa');
+    const result = await postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda completa');
 
     expect(result).toEqual({ postId: 'pub_1' });
-    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
 
     const [creatorInfoUrl, creatorInfoOptions] = fetchMock.mock.calls[0];
     expect(creatorInfoUrl).toBe('https://open.tiktokapis.com/v2/post/publish/creator_info/query/');
@@ -100,8 +195,6 @@ describe('postToTikTok', () => {
   });
 
   it('repassa disable_comment = true quando o creator_info reporta comment_disabled', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY'], true))
@@ -115,15 +208,13 @@ describe('postToTikTok', () => {
       });
     vi.stubGlobal('fetch', fetchMock);
 
-    await postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda completa');
+    await postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda completa');
 
     const [, initOptions] = fetchMock.mock.calls[1];
     expect(JSON.parse(initOptions.body).post_info.disable_comment).toBe(true);
   });
 
   it('lança erro quando a consulta de informações do criador falha', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -132,98 +223,20 @@ describe('postToTikTok', () => {
       }),
     );
 
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao consultar informações do criador no TikTok: Token inválido',
-    );
+    await expect(
+      postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda'),
+    ).rejects.toThrow('Falha ao consultar informações do criador no TikTok: Token inválido');
   });
 
   it('lança erro quando SELF_ONLY não está entre as opções de privacidade do criador', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(creatorInfoResponse(['PUBLIC_TO_EVERYONE'])));
 
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'SELF_ONLY não disponível',
-    );
-  });
-
-  it('renova o token antes de postar quando ele está perto de expirar', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue({
-      accessToken: 'old-access-token',
-      refreshToken: 'old-refresh-token',
-      expiresAt: Date.now() + 60 * 1000, // expira em 1min — precisa renovar
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-          expires_in: 86400,
-        }),
-      })
-      .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { publish_id: 'pub_1' }, error: { code: 'ok' } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { status: 'PUBLISH_COMPLETE' }, error: { code: 'ok' } }),
-      });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda completa');
-
-    expect(result).toEqual({ postId: 'pub_1' });
-    expect(saveTikTokTokensMock).toHaveBeenCalledWith(
-      expect.objectContaining({ accessToken: 'new-access-token', refreshToken: 'new-refresh-token' }),
-    );
-
-    const [refreshUrl, refreshOptions] = fetchMock.mock.calls[0];
-    expect(refreshUrl).toBe('https://open.tiktokapis.com/v2/oauth/token/');
-    expect(refreshOptions.body.toString()).toContain('grant_type=refresh_token');
-    expect(refreshOptions.body.toString()).toContain('refresh_token=old-refresh-token');
-
-    const [initUrl, initOptions] = fetchMock.mock.calls[2];
-    expect(initUrl).toBe('https://open.tiktokapis.com/v2/post/publish/content/init/');
-    expect(initOptions.headers.Authorization).toBe('Bearer new-access-token');
-  });
-
-  it('lança erro quando a renovação do token falha', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue({
-      accessToken: 'old-access-token',
-      refreshToken: 'expired-refresh-token',
-      expiresAt: Date.now() - 1000, // já expirado
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        json: async () => ({ error: 'invalid_grant', error_description: 'Refresh token expirado' }),
-      }),
-    );
-
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao renovar token do TikTok',
-    );
-  });
-
-  it('lança erro quando não existe token salvo (nunca rodou o bootstrap)', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(null);
-
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Token do TikTok não configurado',
-    );
+    await expect(
+      postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda'),
+    ).rejects.toThrow('SELF_ONLY não disponível');
   });
 
   it('lança erro quando a criação da publicação falha', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
@@ -233,14 +246,12 @@ describe('postToTikTok', () => {
       });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao publicar no TikTok: Imagem inválida (code: invalid_params)',
-    );
+    await expect(
+      postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda'),
+    ).rejects.toThrow('Falha ao publicar no TikTok: Imagem inválida (code: invalid_params)');
   });
 
   it('lança erro quando o status da publicação vem como FAILED', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
@@ -257,47 +268,12 @@ describe('postToTikTok', () => {
       });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao publicar no TikTok: picture_size_check_failed',
-    );
-  });
-
-  it('lança erro quando faltam variáveis de ambiente', async () => {
-    loadTikTokTokensMock.mockResolvedValue({
-      accessToken: 'x',
-      refreshToken: 'y',
-      expiresAt: Date.now() - 1000, // força o caminho de renovação, que precisa das env vars
-    });
-
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Variáveis de ambiente do TikTok ausentes',
-    );
-  });
-
-  it('lança erro e não salva quando a renovação retorna 200 sem refresh_token (evita corromper o token store)', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue({
-      accessToken: 'old-access-token',
-      refreshToken: 'old-refresh-token',
-      expiresAt: Date.now() + 60 * 1000, // perto de expirar — força renovação
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ access_token: 'new-access-token', expires_in: 86400 }), // sem refresh_token
-      }),
-    );
-
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Falha ao renovar token do TikTok',
-    );
-    expect(saveTikTokTokensMock).not.toHaveBeenCalled();
+    await expect(
+      postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda'),
+    ).rejects.toThrow('Falha ao publicar no TikTok: picture_size_check_failed');
   });
 
   it('lança erro em português quando o polling de status responde sem o campo data', async () => {
-    stubEnv();
-    loadTikTokTokensMock.mockResolvedValue(VALID_TOKENS);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(creatorInfoResponse(['SELF_ONLY']))
@@ -311,8 +287,8 @@ describe('postToTikTok', () => {
       });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(postToTikTok('https://x.com/img.jpg', 'Produto X', 'legenda')).rejects.toThrow(
-      'Resposta inesperada da TikTok ao checar status da publicação',
-    );
+    await expect(
+      postToTikTok('valid-access-token', 'https://x.com/img.jpg', 'Produto X', 'legenda'),
+    ).rejects.toThrow('Resposta inesperada da TikTok ao checar status da publicação');
   });
 });

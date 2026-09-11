@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { postToTikTokMock } = vi.hoisted(() => ({ postToTikTokMock: vi.fn() }));
 
-vi.mock('@/lib/social/tiktok', () => ({ postToTikTok: postToTikTokMock }));
+vi.mock('@/lib/social/tiktok', () => ({
+  postToTikTok: postToTikTokMock,
+  getValidAccessToken: vi.fn().mockResolvedValue('fake-access-token'),
+}));
 
 import { POST } from './route';
 
@@ -65,6 +68,7 @@ describe('POST /api/admin/tiktok-post', () => {
     expect(response.status).toBe(200);
     expect(json).toEqual({ ok: true, postId: 'abc123' });
     expect(postToTikTokMock).toHaveBeenCalledWith(
+      'fake-access-token',
       'https://promopost.tobiestore.com.br/api/tiktok-image-proxy?imageUrl=' +
         encodeURIComponent('https://http2.mlstatic.com/D_1.jpg'),
       'Produto teste',

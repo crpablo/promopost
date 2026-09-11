@@ -7,7 +7,10 @@ vi.mock('@/lib/shopify/publisher', () => ({ publishArticle: vi.fn() }));
 vi.mock('@/lib/social/caption', () => ({ buildSocialCaption: vi.fn() }));
 vi.mock('@/lib/social/facebook', () => ({ postToFacebook: vi.fn() }));
 vi.mock('@/lib/social/instagram', () => ({ postToInstagram: vi.fn(), postStoryToInstagram: vi.fn() }));
-vi.mock('@/lib/social/tiktok', () => ({ postToTikTok: vi.fn() }));
+vi.mock('@/lib/social/tiktok', () => ({
+  postToTikTok: vi.fn(),
+  getValidAccessToken: vi.fn().mockResolvedValue('fake-access-token'),
+}));
 vi.mock('@/lib/social/telegramGroups', () => ({ postToTelegramGroups: vi.fn() }));
 vi.mock('@/lib/content/couponTemplate', () => ({
   buildCouponCaption: vi.fn(),
@@ -117,6 +120,7 @@ describe('POST /api/webhook', () => {
     expect(postToFacebook).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
     expect(postToInstagram).toHaveBeenCalledWith('https://x.com/img.jpg', 'legenda social');
     expect(postToTikTok).toHaveBeenCalledWith(
+      'fake-access-token',
       'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
       'Produto X',
       'legenda social',
@@ -679,6 +683,7 @@ describe('POST /api/webhook', () => {
     expect(postToInstagram).not.toHaveBeenCalled();
     expect(postStoryToInstagram).not.toHaveBeenCalled();
     expect(postToTikTok).toHaveBeenCalledWith(
+      'fake-access-token',
       'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=https%3A%2F%2Fx.com%2Fimg.jpg',
       'Produto X',
       'legenda social',
@@ -752,7 +757,7 @@ describe('POST /api/webhook', () => {
 
     await POST(makeRequest({ link: 'https://mercadolivre.com.br/MLB123' }));
 
-    const [, calledTitle] = vi.mocked(postToTikTok).mock.calls[0];
+    const [, , calledTitle] = vi.mocked(postToTikTok).mock.calls[0];
     expect(calledTitle).toHaveLength(90);
     expect(calledTitle).toBe('A'.repeat(90));
   });

@@ -23,7 +23,7 @@ async function refreshAccessToken(refreshToken: string): Promise<TikTokTokens> {
   return tokens;
 }
 
-async function getValidAccessToken(): Promise<string> {
+export async function getValidAccessToken(): Promise<string> {
   const tokens = await loadTikTokTokens();
   if (!tokens) {
     throw new Error('Token do TikTok não configurado — rode o bootstrap (ver runbook)');
@@ -97,12 +97,11 @@ async function waitForPublishComplete(publishId: string, accessToken: string): P
 }
 
 export async function postToTikTok(
+  accessToken: string,
   imageUrl: string,
   title: string,
   description: string,
 ): Promise<SocialPostResult> {
-  const accessToken = await getValidAccessToken();
-
   const creatorInfo = await queryCreatorInfo(accessToken);
   if (!creatorInfo.privacyLevelOptions.includes('SELF_ONLY')) {
     throw new Error('Falha ao publicar no TikTok: SELF_ONLY não disponível nas opções de privacidade do criador');
