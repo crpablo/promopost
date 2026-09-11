@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 
-type Resultado = { ok: true; postId: string } | { ok: false; error: string };
+type Resultado = { ok: true; postId: string } | { ok: false; error: string; needsReconnect?: boolean };
 
 export default function TikTokPostForm() {
   const [imageUrl, setImageUrl] = useState('');
@@ -68,6 +68,9 @@ export default function TikTokPostForm() {
             placeholder="https://..."
             style={{ padding: 8, boxSizing: 'border-box' }}
           />
+          <span style={{ fontSize: 12, color: '#777' }}>
+            Aceita apenas imagens hospedadas no Mercado Livre, Shopee, Amazon ou Magalu.
+          </span>
         </label>
         {imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -83,6 +86,12 @@ export default function TikTokPostForm() {
         {resultado && (
           <p style={{ color: resultado.ok ? '#0a7c2f' : '#b00020' }}>
             {resultado.ok ? 'Publicado com sucesso!' : `Erro: ${resultado.error}`}
+            {!resultado.ok && resultado.needsReconnect && (
+              <>
+                {' '}
+                <a href="/api/tiktok/connect">Reconectar</a>
+              </>
+            )}
           </p>
         )}
       </form>

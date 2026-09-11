@@ -28,7 +28,7 @@ function makeRequest(body: unknown): Request {
 }
 
 const VALID_BODY = {
-  imageUrl: 'https://x.com/img.jpg',
+  imageUrl: 'https://http2.mlstatic.com/img.jpg',
   title: 'Produto teste',
   description: 'Descrição teste',
 };
@@ -53,6 +53,13 @@ describe('POST /api/tiktok/post', () => {
   it('retorna 400 quando falta um campo obrigatório', async () => {
     authMock.mockResolvedValue({ user: { id: 'user-1' } });
     const response = await POST(makeRequest({ imageUrl: 'https://x.com/img.jpg', title: 'Só título' }));
+    expect(response.status).toBe(400);
+    expect(postToTikTokMock).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 quando o host da imagem não é permitido', async () => {
+    authMock.mockResolvedValue({ user: { id: 'user-1' } });
+    const response = await POST(makeRequest({ ...VALID_BODY, imageUrl: 'https://evil.example.com/x.jpg' }));
     expect(response.status).toBe(400);
     expect(postToTikTokMock).not.toHaveBeenCalled();
   });
@@ -85,7 +92,8 @@ describe('POST /api/tiktok/post', () => {
     expect(getValidAccessTokenForBusinessMock).toHaveBeenCalledWith(expect.anything(), 'biz-1');
     expect(postToTikTokMock).toHaveBeenCalledWith(
       'valid-access-token',
-      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=' + encodeURIComponent('https://x.com/img.jpg'),
+      'https://promopost.example.com/api/tiktok-image-proxy?imageUrl=' +
+        encodeURIComponent('https://http2.mlstatic.com/img.jpg'),
       'Produto teste',
       'Descrição teste',
     );
@@ -106,7 +114,11 @@ describe('POST /api/tiktok/post', () => {
     const json = await response.json();
 
     expect(response.status).toBe(502);
-    expect(json).toEqual({ ok: false, error: 'Conta do TikTok não conectada' });
+    expect(json).toEqual({
+      ok: false,
+      error: 'Sua conexão com o TikTok expirou, reconecte antes de publicar',
+      needsReconnect: true,
+    });
     expect(postToTikTokMock).not.toHaveBeenCalled();
   });
 

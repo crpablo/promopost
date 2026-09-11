@@ -255,18 +255,15 @@ Conferir na conta do TikTok (o post vai estar privado, visível só logado nela)
 - `tiktok: {ok:false, error:'WEBHOOK_BASE_URL não configurado'}` — falta a variável `WEBHOOK_BASE_URL` (mesma usada pela seção 10.5), necessária pra montar a URL do `/api/tiktok-image-proxy`.
 - Erro de URL de imagem não permitida vindo da própria TikTok — o domínio do passo 11.1.6 ainda não foi verificado (a verificação pode levar um tempo pra propagar depois de configurada).
 
-### 11.6 Página admin para post manual (gravação de vídeo de review)
+### 11.6 Publicar manualmente pra gravar o vídeo de review
 
-O PromoPost não tem UI de usuário — toda postagem é disparada por webhook. Para gravar o vídeo demo exigido pela revisão de Produção da TikTok (mostrando o fluxo de Login Kit + Content Posting API), existe uma página interna em `/admin` que dispara `postToTikTok()` manualmente, sem esperar um webhook real.
+O PromoPost tem uma UI de usuário real em `/dashboard` — qualquer empresa cadastrada pode conectar sua própria conta do TikTok e publicar manualmente por lá (ver `docs/superpowers/specs/2026-09-11-tiktok-tenant-manual-post-design.md`). Pra gravar o vídeo demo exigido pela revisão de Produção da TikTok (mostrando o fluxo de Login Kit + Content Posting API pela interface real do produto, não por uma ferramenta interna — foi uma das coisas que contribuiu pra rejeição anterior), use esse fluxo em vez do `/admin`:
 
-1. Configure `ADMIN_TOKEN` nas variáveis de ambiente com um valor longo e aleatório (ex: gere com `openssl rand -hex 32`) — é a única barreira dessa rota, que publica de verdade na conta do TikTok sem rate limiting.
-2. Acesse `https://promopost.tobiestore.com.br/admin?token=<ADMIN_TOKEN>`. Sem o token certo na query string, a página mostra um "404" genérico — não revela que a ferramenta existe.
-3. O formulário já vem preenchido com um exemplo de URL de imagem, título e descrição — edite se quiser, e clique em "Publicar no TikTok".
-4. A página mostra o `postId` em caso de sucesso, ou a mensagem de erro crua da TikTok em caso de falha (mesma tabela de causas da seção 11.5 se aplica).
+1. Logue em `/login`, complete o onboarding se ainda não tiver uma empresa cadastrada.
+2. Em `/dashboard`, clique em "Conectar TikTok" e autorize com a conta que vai aparecer no vídeo (conta privada — exigência de apps não auditados, ver aviso no próprio formulário).
+3. Preencha o formulário "Publicar no TikTok" (aceita só imagens hospedadas no Mercado Livre, Shopee, Amazon ou Magalu — ver `src/app/api/tiktok-image-proxy/route.ts`) e clique em "Publicar no TikTok".
 
-**Cuidado ao gravar:** o token fica visível na barra de endereço durante a gravação (diferente do `WEBHOOK_SECRET`, que vai só em header HTTP e nunca aparece na tela) — e essa gravação específica é enviada pra revisão da TikTok, um terceiro. Corte/borre a barra de endereço no vídeo antes de enviar e, de qualquer forma, rotacione `ADMIN_TOKEN` pra um valor novo assim que terminar de gravar, pra que o token exposto no vídeo já esteja inválido.
-
-Essa rota reaproveita o mesmo `postToTikTok()` e o mesmo proxy de imagem (`/api/tiktok-image-proxy`) do fluxo de produção — o que ela pula é só a origem do disparo (formulário em vez de webhook do Mercado Livre).
+A rota interna `/admin?token=<ADMIN_TOKEN>` ainda existe e continua funcionando (reaproveita o mesmo `postToTikTok()` e o mesmo proxy de imagem) — pode servir pra debug rápido sem passar pelo fluxo de login, mas evite usá-la pra gravar a demo de review.
 
 ## 12. Shopee (opcional, sub-projeto separado)
 

@@ -8,7 +8,7 @@ const ALLOWED_IMAGE_HOSTS = [
   /(^|\.)mlcdn\.com\.br$/i,
 ];
 
-function isAllowedImageHost(url: string): boolean {
+export function isAllowedImageHost(url: string): boolean {
   try {
     const hostname = new URL(url).hostname;
     if (ALLOWED_IMAGE_HOSTS.some((pattern) => pattern.test(hostname))) {
