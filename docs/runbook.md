@@ -305,7 +305,7 @@ Se falhar, confira os logs (`vercel logs`) — o erro real da chamada assinada a
 
 Cobre o cadastro/login por magic link (`/login`, `/onboarding`, `/dashboard`) via Auth.js, com sessão em banco (`strategy: 'database'`) e um Postgres self-hosted novo (serviço `db` no `docker-compose.yml`) — ver spec em `docs/superpowers/specs/2026-09-03-multitenant-foundation-design.md`.
 
-**Bloqueado até alguém provisionar Resend:** este projeto ainda não tem conta Resend nem domínio de envio verificado. Sem `RESEND_API_KEY`/`EMAIL_FROM` configurados com uma conta real, o envio do magic link falha sempre — a feature inteira fica indisponível em produção até isso ser resolvido.
+**Resend configurado:** domínio de envio verificado é `mail.tobiestore.com.br` (`EMAIL_FROM=PromoPost <login@mail.tobiestore.com.br>`). `RESEND_API_KEY` está no `.env` da VPS.
 
 ### 13.1 Bootstrap único num VPS novo
 
@@ -313,7 +313,7 @@ Cobre o cadastro/login por magic link (`/login`, `/onboarding`, `/dashboard`) vi
 2. **`DATABASE_URL`** — mesma senha acima, no formato `postgresql://promopost:<senha>@db:5432/promopost` (host `db`, o nome do serviço no Compose — não `localhost`, o app fala com o Postgres só pela rede interna do Compose).
 3. **`AUTH_SECRET`** — gere com `openssl rand -hex 32`.
 4. **`AUTH_URL`** — a URL pública do app (ex: `https://promopost.tobiestore.com.br`). Sem isso, `trustHost` do Auth.js fica `false` em produção e todo `auth()`/`signIn()` falha com `UntrustedHost` (ver comentário em `src/auth.ts` e `.env.example`).
-5. **`RESEND_API_KEY`/`EMAIL_FROM`** — conta Resend (resend.com) com um domínio de envio verificado. **Ainda não provisionado neste projeto** — ver aviso no topo desta seção.
+5. **`RESEND_API_KEY`/`EMAIL_FROM`** — conta Resend (resend.com) com um domínio de envio verificado. Já configurado neste projeto — ver nota no topo desta seção.
 6. Suba os containers e aplique a migration (o `deploy.sh` já faz isso automaticamente a partir de agora — ver 13.2 — mas pra um bootstrap manual num servidor novo antes do primeiro `deploy.sh`):
    ```bash
    docker compose up -d --build
@@ -331,3 +331,14 @@ O Postgres não expõe porta pro host (só é acessível pela rede interna do Co
 ```bash
 docker compose exec db psql -U promopost -d promopost
 ```
+
+### 13.4 Conexão de TikTok por tenant (Peça 2)
+
+Cada empresa cadastrada pode conectar sua própria conta do TikTok em `/dashboard` (botão "Conectar TikTok"), token guardado na tabela `tiktok_accounts` — ver spec em `docs/superpowers/specs/2026-09-11-tiktok-tenant-connection-design.md`. Não afeta o fluxo interno da Tobie Store (continua usando `tiktok-tokens.json`) nem o pipeline automático de postagem, que ainda não usa essas contas.
+
+**Setup necessário (uma vez):**
+1. No TikTok Developer Portal, cadastre uma **Redirect URI adicional** no mesmo app: `https://promopost.tobiestore.com.br/api/tiktok/callback`.
+2. Defina `TIKTOK_TENANT_REDIRECT_URI` no `.env` da VPS com essa mesma URL.
+3. Reaproveita `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET` já configurados — nenhuma credencial nova.
+
+**Sandbox ainda restringe quem consegue autorizar:** enquanto o app não for aprovado pra Produção (ver [[promopost-tiktok-setup-pending]] na memória — a submissão de 2026-08-27 foi rejeitada), só contas cadastradas manualmente como "Target Users" no Developer Portal conseguem completar o OAuth. Pra testar este fluxo com uma segunda empresa/conta, adicione essa conta como target user lá primeiro.
