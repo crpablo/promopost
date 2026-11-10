@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    init: true
     restart: unless-stopped
     env_file:
       - .env
